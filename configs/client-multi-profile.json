@@ -1,0 +1,289 @@
+{
+  "_comment": "КЛИЕНТ С МУЛЬТИВХОДОМ. Пять точек входа с приоритетами: RU-врата основные, зарубежные прямые - резервные. КРИТИЧНО: не используйте автовыбор по наименьшему пингу. Заморозка tcp 16-20 наступает ПОСЛЕ успешного рукопожатия, поэтому прямой Hetzner выигрывает ping-тест, а потом зависает на первом мегабайте. Подробности - в docs/multi-entry.md.",
+
+  "log": { "loglevel": "warning" },
+
+  "dns": {
+    "servers": [
+      { "address": "https://dns.google/dns-query", "domains": ["geosite:geolocation-!ru"] },
+      { "address": "77.88.8.8", "domains": ["geosite:category-ru"], "expectIPs": ["geoip:ru"] },
+      "localhost"
+    ],
+    "queryStrategy": "UseIPv4"
+  },
+
+  "inbounds": [
+    {
+      "tag": "socks-in",
+      "listen": "127.0.0.1",
+      "port": 10808,
+      "protocol": "socks",
+      "settings": { "udp": true, "auth": "noauth" },
+      "sniffing": { "enabled": true, "destOverride": ["http", "tls", "quic"] }
+    },
+    {
+      "tag": "http-in",
+      "listen": "127.0.0.1",
+      "port": 10809,
+      "protocol": "http",
+      "sniffing": { "enabled": true, "destOverride": ["http", "tls", "quic"] }
+    }
+  ],
+
+  "outbounds": [
+    {
+      "tag": "ru-gate-primary",
+      "_priority": "1 - ОСНОВНОЙ. Белый IP: июньский алгоритм обрывается на звене 1, tcp 16-20 не применяется, whitelist по CIDR проходит.",
+      "protocol": "vless",
+      "settings": {
+        "vnext": [
+          {
+            "address": "vpn.example.ru",
+            "port": 443,
+            "users": [{ "id": "UUID", "encryption": "none", "level": 0 }]
+          }
+        ]
+      },
+      "streamSettings": {
+        "network": "xhttp",
+        "security": "reality",
+        "realitySettings": {
+          "serverName": "vpn.example.ru",
+          "fingerprint": "firefox",
+          "publicKey": "PUBKEY_RU_PRIMARY",
+          "shortId": "SID_RU_PRIMARY",
+          "spiderX": "/"
+        },
+        "xhttpSettings": {
+          "host": "vpn.example.ru",
+          "path": "/assets/media/stream",
+          "mode": "auto",
+          "extra": {
+            "xPaddingBytes": "100-1000",
+            "xmux": {
+              "maxConnections": "2-3",
+              "maxConcurrency": 0,
+              "cMaxReuseTimes": "64-128",
+              "hMaxRequestTimes": "800-900",
+              "hMaxReusableSecs": "1800-3000"
+            }
+          }
+        },
+        "sockopt": { "tcpFastOpen": true }
+      }
+    },
+
+    {
+      "tag": "ru-gate-backup",
+      "_priority": "2 - РЕЗЕРВНЫЕ RU-ВРАТА у другого провайдера, тоже с белым IP. Строго надёжнее любого прямого зарубежного входа. Если бюджет позволяет только одно улучшение схемы - берите этот второй российский VPS, а не возню с прямыми входами.",
+      "protocol": "vless",
+      "settings": {
+        "vnext": [
+          {
+            "address": "vpn2.example.ru",
+            "port": 443,
+            "users": [{ "id": "UUID", "encryption": "none", "level": 0 }]
+          }
+        ]
+      },
+      "streamSettings": {
+        "network": "xhttp",
+        "security": "reality",
+        "realitySettings": {
+          "serverName": "vpn2.example.ru",
+          "fingerprint": "firefox",
+          "publicKey": "PUBKEY_RU_BACKUP",
+          "shortId": "SID_RU_BACKUP",
+          "spiderX": "/"
+        },
+        "xhttpSettings": {
+          "host": "vpn2.example.ru",
+          "path": "/cdn/v3/segments",
+          "mode": "auto",
+          "extra": {
+            "xPaddingBytes": "100-1000",
+            "xmux": {
+              "maxConnections": "2-3",
+              "maxConcurrency": 0,
+              "cMaxReuseTimes": "64-128",
+              "hMaxRequestTimes": "800-900",
+              "hMaxReusableSecs": "1800-3000"
+            }
+          }
+        },
+        "sockopt": { "tcpFastOpen": true }
+      }
+    },
+
+    {
+      "tag": "kz-direct",
+      "_priority": "3 - ЛУЧШИЙ ЗАРУБЕЖНЫЙ ПРЯМОЙ. Казахстанский провайдер не обязан попадать в списки зарубежных ДЦ категории Hetzner/OVH/DO. Проверьте подсеть через dpi-ch: если чистая, это ваш основной резерв и самый низкий RTT из зарубежных.",
+      "protocol": "vless",
+      "settings": {
+        "vnext": [
+          {
+            "address": "kz.example.ru",
+            "port": 8443,
+            "users": [{ "id": "UUID", "encryption": "none", "level": 0 }]
+          }
+        ]
+      },
+      "streamSettings": {
+        "network": "xhttp",
+        "security": "reality",
+        "realitySettings": {
+          "serverName": "kz.example.ru",
+          "fingerprint": "firefox",
+          "publicKey": "PUBKEY_KZ",
+          "shortId": "SID_KZ",
+          "spiderX": "/"
+        },
+        "xhttpSettings": {
+          "host": "kz.example.ru",
+          "path": "/static/chunk/data",
+          "mode": "auto",
+          "extra": {
+            "xPaddingBytes": "100-1000",
+            "xmux": {
+              "maxConnections": "2-3",
+              "maxConcurrency": 0,
+              "cMaxReuseTimes": "8-16",
+              "hMaxRequestTimes": "16-32",
+              "hMaxReusableSecs": "60-120",
+              "_comment_tcp1620": "Время жизни соединений снижено на порядок против RU-профилей. tcp 16-20 замораживает TCP-соединение после ~14-34 КБ; частая переработка соединений смягчает эффект ценой лишних хендшейков и потолка скорости. Это СМЯГЧЕНИЕ, а не решение."
+            }
+          }
+        },
+        "sockopt": { "tcpFastOpen": true }
+      }
+    },
+
+    {
+      "tag": "de-direct",
+      "_priority": "4 - РЕЗЕРВ. Hetzner/подобные подсети под tcp 16-20. Работает за границей и у части пользователей в РФ.",
+      "protocol": "vless",
+      "settings": {
+        "vnext": [
+          {
+            "address": "de.example.ru",
+            "port": 8443,
+            "users": [{ "id": "UUID", "encryption": "none", "level": 0 }]
+          }
+        ]
+      },
+      "streamSettings": {
+        "network": "xhttp",
+        "security": "reality",
+        "realitySettings": {
+          "serverName": "de.example.ru",
+          "fingerprint": "firefox",
+          "publicKey": "PUBKEY_DE",
+          "shortId": "SID_DE",
+          "spiderX": "/"
+        },
+        "xhttpSettings": {
+          "host": "de.example.ru",
+          "path": "/static/chunk/data",
+          "mode": "auto",
+          "extra": {
+            "xPaddingBytes": "100-1000",
+            "xmux": {
+              "maxConnections": "2-3",
+              "maxConcurrency": 0,
+              "cMaxReuseTimes": "8-16",
+              "hMaxRequestTimes": "16-32",
+              "hMaxReusableSecs": "60-120"
+            }
+          }
+        },
+        "sockopt": { "tcpFastOpen": true }
+      }
+    },
+
+    {
+      "tag": "nl-direct-grpc",
+      "_priority": "5 - ЗАПАСНОЙ ТРАНСПОРТ. Из полевых наблюдений: там, где XHTTP не проходит, иногда работают gRPC и httpupgrade. Держите один такой профиль - стоит он недорого.",
+      "protocol": "vless",
+      "settings": {
+        "vnext": [
+          {
+            "address": "nl.example.ru",
+            "port": 2096,
+            "users": [{ "id": "UUID", "encryption": "none", "level": 0 }]
+          }
+        ]
+      },
+      "streamSettings": {
+        "network": "grpc",
+        "security": "reality",
+        "realitySettings": {
+          "serverName": "nl.example.ru",
+          "fingerprint": "firefox",
+          "publicKey": "PUBKEY_NL",
+          "shortId": "SID_NL",
+          "spiderX": "/"
+        },
+        "grpcSettings": {
+          "serviceName": "grpc.content.v1.Stream",
+          "multiMode": true,
+          "idle_timeout": 60,
+          "health_check_timeout": 20
+        },
+        "sockopt": { "tcpFastOpen": true }
+      }
+    },
+
+    { "tag": "direct", "protocol": "freedom", "settings": { "domainStrategy": "UseIPv4" } },
+    { "tag": "block", "protocol": "blackhole", "settings": { "response": { "type": "http" } } }
+  ],
+
+  "routing": {
+    "domainStrategy": "IPIfNonMatch",
+    "rules": [
+      { "type": "field", "ip": ["geoip:private"], "outboundTag": "direct" },
+      { "type": "field", "domain": ["geosite:category-ads-all"], "outboundTag": "block" },
+      {
+        "_comment": "КРИТИЧНО при прямом подключении к зарубежной ноде. На DE-ноде нет российского выхода, поэтому банк-клиенты и госуслуги увидят немецкий IP и заблокируют вход. Правило гонит российские домены мимо туннеля вообще - независимо от того, к какому узлу подключён человек. Должно присутствовать во ВСЕХ выдаваемых профилях.",
+        "type": "field",
+        "domain": ["geosite:category-ru", "geosite:category-gov-ru"],
+        "outboundTag": "direct"
+      },
+      { "type": "field", "ip": ["geoip:ru"], "outboundTag": "direct" },
+      {
+        "_comment": "Весь остальной трафик - в балансировщик с приоритетным перебором",
+        "type": "field",
+        "network": "tcp,udp",
+        "balancerTag": "gates"
+      }
+    ],
+    "balancers": [
+      {
+        "tag": "gates",
+        "selector": ["ru-gate-primary", "ru-gate-backup", "kz-direct", "de-direct", "nl-direct-grpc"],
+        "strategy": { "type": "leastPing" },
+        "_comment_strategy": "ВНИМАНИЕ. leastPing в Xray-core меряет задержку, а не работоспособность под нагрузкой, и будет систематически выбирать ХУДШИЙ узел: прямой Hetzner отвечает быстрее, чем цепочка через Москву, выигрывает пробу и зависает на реальном трафике. Варианты: (а) заменить на 'random' и полагаться на порядок хостов в подписке; (б) оставить в selector только ru-gate-primary и ru-gate-backup, а зарубежные прямые отдавать отдельными профилями для ручного переключения - РЕКОМЕНДУЕТСЯ; (в) настроить observatory.probeURL на файл заведомо больше 50 КБ, чтобы проба реально ловила заморозку tcp 16-20."
+      }
+    ]
+  },
+
+  "observatory": {
+    "subjectSelector": ["ru-gate", "kz-", "de-", "nl-"],
+    "probeURL": "https://speed.cloudflare.com/__down?bytes=100000",
+    "_comment_probe": "100 КБ, а не стандартный generate_204 на 0 байт. Заморозка tcp 16-20 наступает после ~14-34 КБ, поэтому проба нулевого размера её НЕ ОБНАРУЖИТ и объявит мёртвый узел живым.",
+    "probeInterval": "15m",
+    "_comment_interval": "15 минут вместо стандартных 3-10. Счётчик июньского алгоритма ведётся к КАЖДОМУ серверу отдельно, поэтому проба разных узлов к порогу не приближает; длинный интервал нужен ради батареи и трафика на мобильных.",
+    "enableConcurrency": false,
+    "_comment_concurrency": "Последовательная проверка вместо параллельной: гарантирует, что даже при общем SNI-доноре порог в 3 соединения не превышается."
+  },
+
+  "_client_app_notes": {
+    "_comment": "Настройки для мобильных клиентов (Happ, v2rayNG, Hiddify, FlClash-форки), которые используют свои механизмы выбора, а не конфиг Xray",
+    "recommended": [
+      "Порядок профилей в подписке: RU-врата первыми. Многие клиенты берут первый рабочий.",
+      "Имена профилей осмысленные: 'RU-Gate (основной)', 'KZ-direct (резерв)', 'DE-direct (резерв)'. Человек с проблемой переключится сам и осмысленно.",
+      "Режим выбора: ручной или упорядоченный fallback. НЕ url-test по задержке.",
+      "Если url-test неизбежен - увеличьте интервал до 15-30 мин и, если клиент позволяет, задайте URL пробы с телом >50 КБ.",
+      "Версия ядра Xray в клиенте обязана совпадать с серверной: XHTTP в активной разработке."
+    ]
+  }
+}

@@ -1,0 +1,117 @@
+{
+  "_comment": "КЛИЕНТСКИЙ КОНФИГ. Три параметра здесь ломают три звена алгоритма ограничений — не убирайте их: fingerprint=firefox (звено 2), xmux.maxConnections=2-3 (звено 3), xPaddingBytes (поведенческий анализ). Версия Xray на клиенте ОБЯЗАНА совпадать с серверной: XHTTP в активной разработке, рассинхрон даёт молчаливые сбои.",
+
+  "log": { "loglevel": "warning" },
+
+  "dns": {
+    "servers": [
+      { "address": "https://dns.google/dns-query", "domains": ["geosite:geolocation-!ru"] },
+      { "address": "77.88.8.8", "domains": ["geosite:category-ru"], "expectIPs": ["geoip:ru"] },
+      "localhost"
+    ],
+    "queryStrategy": "UseIPv4"
+  },
+
+  "inbounds": [
+    {
+      "tag": "socks-in",
+      "listen": "127.0.0.1",
+      "port": 10808,
+      "protocol": "socks",
+      "settings": { "udp": true, "auth": "noauth" },
+      "sniffing": { "enabled": true, "destOverride": ["http", "tls", "quic"], "routeOnly": false }
+    },
+    {
+      "tag": "http-in",
+      "listen": "127.0.0.1",
+      "port": 10809,
+      "protocol": "http",
+      "sniffing": { "enabled": true, "destOverride": ["http", "tls", "quic"] }
+    }
+  ],
+
+  "outbounds": [
+    {
+      "tag": "proxy",
+      "protocol": "vless",
+      "settings": {
+        "vnext": [
+          {
+            "address": "vpn.example.ru",
+            "port": 443,
+            "users": [
+              {
+                "id": "00000000-0000-0000-0000-000000000000",
+                "encryption": "none",
+                "level": 0
+              }
+            ]
+          }
+        ]
+      },
+      "streamSettings": {
+        "network": "xhttp",
+        "security": "reality",
+        "realitySettings": {
+          "serverName": "vpn.example.ru",
+          "fingerprint": "firefox",
+          "_comment_fp": "ЗВЕНО 2. Chrome/Safari/iOS в чёрном списке фингерпринтов с июня 2026. Firefox/Edge/OkHttp проходят. Резервные значения: edge, safari(НЕ использовать), 360, qq, random(НЕ использовать - непредсказуемо). НИКОГДА не меняйте fp во время активной заморозки: получите 600 сек блокировки вместо 120.",
+          "publicKey": "PUBLIC_KEY_FROM_SERVER",
+          "shortId": "0123456789abcdef",
+          "spiderX": "/"
+        },
+        "xhttpSettings": {
+          "host": "vpn.example.ru",
+          "path": "/assets/media/stream",
+          "mode": "auto",
+          "extra": {
+            "xPaddingBytes": "100-1000",
+            "xmux": {
+              "maxConnections": "2-3",
+              "maxConcurrency": 0,
+              "cMaxReuseTimes": "64-128",
+              "hMaxRequestTimes": "800-900",
+              "hMaxReusableSecs": "1800-3000",
+              "hKeepAlivePeriod": 0,
+              "_comment_xmux": "ЗВЕНО 3. maxConnections=2-3 жёстко удерживает число параллельных TLS ниже порога в 3 за 60 сек. maxConcurrency ОБЯЗАН быть 0, когда задан maxConnections — одновременно они не работают. Это единственный параметр, детерминированно ломающий счётчик соединений."
+            }
+          }
+        },
+        "sockopt": { "tcpFastOpen": true }
+      }
+    },
+
+    { "tag": "direct", "protocol": "freedom", "settings": { "domainStrategy": "UseIPv4" } },
+    { "tag": "block", "protocol": "blackhole", "settings": { "response": { "type": "http" } } }
+  ],
+
+  "routing": {
+    "domainStrategy": "IPIfNonMatch",
+    "rules": [
+      { "type": "field", "ip": ["geoip:private"], "outboundTag": "direct" },
+      { "type": "field", "domain": ["geosite:category-ads-all"], "outboundTag": "block" },
+      {
+        "_comment": "Российские сервисы идут мимо туннеля — быстрее и не ломает банк-клиенты",
+        "type": "field",
+        "domain": ["geosite:category-ru", "geosite:category-gov-ru"],
+        "outboundTag": "direct"
+      },
+      { "type": "field", "ip": ["geoip:ru"], "outboundTag": "direct" },
+      { "type": "field", "network": "tcp,udp", "outboundTag": "proxy" }
+    ]
+  },
+
+  "_uri_template": {
+    "_comment": "Тот же профиль в виде ссылки для мобильных клиентов (Happ, v2rayNG, Streisand, NekoBox). Подставьте свои значения и URL-кодируйте path.",
+    "uri": "vless://UUID@vpn.example.ru:443?type=xhttp&security=reality&sni=vpn.example.ru&fp=firefox&pbk=PUBLIC_KEY&sid=SHORT_ID&path=%2Fassets%2Fmedia%2Fstream&mode=auto&extra=%7B%22xmux%22%3A%7B%22maxConnections%22%3A%222-3%22%2C%22maxConcurrency%22%3A0%7D%2C%22xPaddingBytes%22%3A%22100-1000%22%7D#RU-Gate-DE"
+  },
+
+  "_recommended_clients": {
+    "android": "Happ, v2rayNG (свежие сборки с поддержкой XHTTP extra)",
+    "ios": "Happ, Streisand, V2Box",
+    "windows": "Hiddify, NekoRay, v2rayN",
+    "macos": "Happ, Hiddify, V2Box",
+    "linux": "Xray-core напрямую, NekoRay",
+    "_note": "Проверьте, что клиент умеет xhttp extra/xmux. Старые сборки молча игнорируют extra — и вы теряете защиту звена 3."
+  }
+}

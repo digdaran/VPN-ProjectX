@@ -1,0 +1,179 @@
+{
+  "_comment": "ВЫХОДНАЯ НОДА С ПУБЛИЧНЫМ ВХОДОМ. Замена xray-exit-node.json, когда нужны прямые подключения клиентов помимо транзита с RU-ноды. Три inbound на разных портах: 443 - транзит (только с IP RU-ноды), 8443 - прямой вход XHTTP, 2096 - прямой вход gRPC (запасной транспорт). Подробности и ожидания от прямого входа - в docs/multi-entry.md.",
+
+  "log": { "loglevel": "warning", "access": "none" },
+
+  "dns": {
+    "servers": ["https://dns.google/dns-query", "1.1.1.1", "localhost"],
+    "queryStrategy": "UseIPv4"
+  },
+
+  "inbounds": [
+    {
+      "tag": "transit-in",
+      "_comment": "ТРАНЗИТ с российской ноды. Firewall: ufw allow from <IP_RU_НОДЫ> to any port 443 proto tcp. Наружу открыт быть НЕ должен.",
+      "listen": "0.0.0.0",
+      "port": 443,
+      "protocol": "vless",
+      "settings": {
+        "clients": [{ "id": "TRANSIT_UUID_DE", "email": "transit-ru@internal" }],
+        "decryption": "none"
+      },
+      "streamSettings": {
+        "network": "xhttp",
+        "security": "reality",
+        "realitySettings": {
+          "show": false,
+          "dest": "www.microsoft.com:443",
+          "xver": 0,
+          "serverNames": ["www.microsoft.com"],
+          "privateKey": "PRIVATE_KEY_DE_TRANSIT",
+          "shortIds": ["SHORT_ID_DE_TRANSIT"]
+        },
+        "xhttpSettings": {
+          "host": "www.microsoft.com",
+          "path": "/cdn/v3/assets",
+          "mode": "auto",
+          "extra": {
+            "xPaddingBytes": "100-1000",
+            "scMaxEachPostBytes": 1000000,
+            "scMinPostsIntervalMs": 30
+          }
+        }
+      },
+      "sniffing": { "enabled": true, "destOverride": ["http", "tls", "quic"] }
+    },
+
+    {
+      "tag": "direct-xhttp-in",
+      "_comment": "ПРЯМОЙ ВХОД для клиентов. Self-steal: dest на локальный nginx (поднимите 30-selfsteal.sh с поддоменом de.вашдомен.ru). Открыт публично: ufw allow 8443/tcp. Отдельный порт и отдельные ключи - чтобы можно было выключить прямой вход, не трогая транзит, и различать пути в статистике.",
+      "listen": "0.0.0.0",
+      "port": 8443,
+      "protocol": "vless",
+      "settings": {
+        "clients": [{ "id": "DIRECT_UUID_DE", "email": "direct@de" }],
+        "decryption": "none"
+      },
+      "streamSettings": {
+        "network": "xhttp",
+        "security": "reality",
+        "realitySettings": {
+          "show": false,
+          "dest": "127.0.0.1:8444",
+          "xver": 0,
+          "serverNames": ["de.example.ru"],
+          "privateKey": "PRIVATE_KEY_DE_DIRECT",
+          "shortIds": ["", "SHORT_ID_DE_DIRECT"],
+          "_comment_dest": "nginx для этой ноды слушает 8444, а не 8443, потому что 8443 занят этим inbound. При запуске 30-selfsteal.sh для зарубежной ноды поправьте порт nginx на 8444."
+        },
+        "xhttpSettings": {
+          "host": "de.example.ru",
+          "path": "/static/chunk/data",
+          "mode": "auto",
+          "extra": {
+            "xPaddingBytes": "100-1000",
+            "scMaxEachPostBytes": 500000,
+            "scMinPostsIntervalMs": 30,
+            "_comment_tcp1620": "scMaxEachPostBytes снижен вдвое против транзитного inbound. Механизм tcp 16-20 считает байты в рамках одного TCP-соединения и замораживает его после ~14-34 КБ; частая переработка соединений смягчает эффект. Основная работа делается на стороне клиента через xmux - см. client-multi-profile.json."
+          }
+        }
+      },
+      "sniffing": { "enabled": true, "destOverride": ["http", "tls", "quic"] }
+    },
+
+    {
+      "tag": "direct-grpc-in",
+      "_comment": "ЗАПАСНОЙ ТРАНСПОРТ. Из полевых наблюдений: в отдельных регионах, где XHTTP не проходит, работают gRPC и httpupgrade. Стоит один inbound - держите на всякий случай. ufw allow 2096/tcp.",
+      "listen": "0.0.0.0",
+      "port": 2096,
+      "protocol": "vless",
+      "settings": {
+        "clients": [{ "id": "DIRECT_UUID_DE", "email": "direct-grpc@de" }],
+        "decryption": "none"
+      },
+      "streamSettings": {
+        "network": "grpc",
+        "security": "reality",
+        "realitySettings": {
+          "show": false,
+          "dest": "127.0.0.1:8444",
+          "xver": 0,
+          "serverNames": ["de.example.ru"],
+          "privateKey": "PRIVATE_KEY_DE_DIRECT",
+          "shortIds": ["", "SHORT_ID_DE_DIRECT"]
+        },
+        "grpcSettings": {
+          "serviceName": "grpc.content.v1.Stream",
+          "multiMode": true,
+          "idle_timeout": 60,
+          "health_check_timeout": 20
+        }
+      },
+      "sniffing": { "enabled": true, "destOverride": ["http", "tls", "quic"] }
+    },
+
+    {
+      "tag": "api-in",
+      "listen": "127.0.0.1",
+      "port": 10085,
+      "protocol": "dokodemo-door",
+      "settings": { "address": "127.0.0.1" }
+    }
+  ],
+
+  "outbounds": [
+    { "tag": "direct", "protocol": "freedom", "settings": { "domainStrategy": "UseIPv4" } },
+    { "tag": "block", "protocol": "blackhole", "settings": { "response": { "type": "http" } } }
+  ],
+
+  "api": { "tag": "api", "services": ["HandlerService", "StatsService", "LoggerService"] },
+  "stats": {},
+
+  "policy": {
+    "levels": {
+      "0": {
+        "statsUserUplink": true,
+        "statsUserDownlink": true,
+        "handshake": 4,
+        "connIdle": 300,
+        "bufferSize": 4
+      }
+    },
+    "system": {
+      "statsInboundUplink": true,
+      "statsInboundDownlink": true,
+      "statsOutboundUplink": true,
+      "statsOutboundDownlink": true
+    }
+  },
+
+  "routing": {
+    "domainStrategy": "IPIfNonMatch",
+    "rules": [
+      { "type": "field", "inboundTag": ["api-in"], "outboundTag": "api" },
+      {
+        "_comment": "Защита узла: приватные сети, торренты, исходящий SMTP",
+        "type": "field",
+        "ip": ["geoip:private"],
+        "outboundTag": "block"
+      },
+      { "type": "field", "protocol": ["bittorrent"], "outboundTag": "block" },
+      { "type": "field", "port": "25,465,587", "outboundTag": "block" },
+      { "type": "field", "domain": ["geosite:category-ads-all"], "outboundTag": "block" },
+      { "type": "field", "network": "tcp,udp", "outboundTag": "direct" }
+    ]
+  },
+
+  "_firewall": {
+    "_comment": "Правила ufw для этой ноды",
+    "commands": [
+      "ufw allow from <IP_RU_НОДЫ> to any port 443 proto tcp comment 'transit from RU gate'",
+      "ufw allow 8443/tcp comment 'direct client entry (xhttp)'",
+      "ufw allow 2096/tcp comment 'direct client entry (grpc fallback)'",
+      "ufw allow from <IP_ПАНЕЛИ> to any port 2222 proto tcp comment 'Remnawave panel'",
+      "ufw allow 80/tcp comment 'ACME'"
+    ]
+  },
+
+  "_selfsteal_note": "Для зарубежной ноды запускайте 30-selfsteal.sh с поддоменом (de.вашдомен.ru), затем ИЗМЕНИТЕ порт nginx с 8443 на 8444 в /etc/nginx/sites-available/selfsteal и перезагрузите nginx: sed -i 's/127.0.0.1:8443/127.0.0.1:8444/' /etc/nginx/sites-available/selfsteal && nginx -t && systemctl reload nginx"
+}

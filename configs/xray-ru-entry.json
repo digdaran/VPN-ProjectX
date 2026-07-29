@@ -1,0 +1,120 @@
+{
+  "_comment": "RU-НОДА (ВРАТА). Единственная точка входа для клиентов. Reality в режиме self-steal: dest указывает на локальный nginx с настоящим сайтом, serverNames = ваш собственный домен с A-записью на этот же IP. Никакого SNI/ASN-несоответствия. Транспорт XHTTP закрывает поведенческий анализ после рукопожатия. ЗАМЕНИТЕ: vpn.example.ru, PRIVATE_KEY, shortIds, uuid клиентов.",
+
+  "log": {
+    "loglevel": "warning",
+    "access": "none",
+    "dnsLog": false
+  },
+
+  "dns": {
+    "servers": [
+      "https://dns.google/dns-query",
+      "1.1.1.1",
+      "localhost"
+    ],
+    "queryStrategy": "UseIPv4"
+  },
+
+  "inbounds": [
+    {
+      "tag": "vless-xhttp-reality-in",
+      "listen": "0.0.0.0",
+      "port": 443,
+      "protocol": "vless",
+      "settings": {
+        "clients": [
+          {
+            "id": "00000000-0000-0000-0000-000000000000",
+            "email": "user1@local",
+            "_comment_flow": "flow НЕ указываем: XTLS-Vision работает с XHTTP только в режиме stream-one. Если нужен Vision - см. блок _vision_variant внизу файла."
+          }
+        ],
+        "decryption": "none"
+      },
+      "streamSettings": {
+        "network": "xhttp",
+        "security": "reality",
+        "realitySettings": {
+          "show": false,
+          "dest": "127.0.0.1:8443",
+          "xver": 0,
+          "serverNames": [
+            "vpn.example.ru"
+          ],
+          "privateKey": "PRIVATE_KEY_FROM_xray_x25519",
+          "shortIds": [
+            "",
+            "0123456789abcdef",
+            "a1b2c3d4",
+            "deadbeef"
+          ],
+          "_comment_shortIds": "Несколько shortId позволяют выдавать разным группам пользователей разные значения - смена shortId/пути даёт запасной профиль без переустановки. Пустая строка '' разрешает клиентов без shortId; уберите её для строгого контроля."
+        },
+        "xhttpSettings": {
+          "host": "vpn.example.ru",
+          "path": "/assets/media/stream",
+          "mode": "auto",
+          "_comment_mode": "auto + reality => xray выберет stream-one. packet-up нужен только при работе через CDN, что с Reality неприменимо.",
+          "extra": {
+            "xPaddingBytes": "100-1000",
+            "noSSEHeader": false,
+            "scMaxEachPostBytes": 1000000,
+            "scMinPostsIntervalMs": 30,
+            "scMaxBufferedPosts": 30,
+            "_comment_padding": "xPaddingBytes нормализует распределение размеров пакетов - главная контрмера против ML-классификатора на слое 4 DPI."
+          }
+        }
+      },
+      "sniffing": {
+        "enabled": true,
+        "destOverride": ["http", "tls", "quic"],
+        "routeOnly": true,
+        "_comment": "routeOnly=true: sniffing используется только для маршрутизации, адрес назначения не переписывается. Так работают правила geosite для российских сервисов."
+      }
+    },
+
+    {
+      "tag": "api-in",
+      "listen": "127.0.0.1",
+      "port": 10085,
+      "protocol": "dokodemo-door",
+      "settings": { "address": "127.0.0.1" }
+    }
+  ],
+
+  "api": {
+    "tag": "api",
+    "services": ["HandlerService", "StatsService", "LoggerService"]
+  },
+
+  "stats": {},
+
+  "policy": {
+    "levels": {
+      "0": {
+        "statsUserUplink": true,
+        "statsUserDownlink": true,
+        "handshake": 4,
+        "connIdle": 300,
+        "uplinkOnly": 2,
+        "downlinkOnly": 2,
+        "bufferSize": 4
+      }
+    },
+    "system": {
+      "statsInboundUplink": true,
+      "statsInboundDownlink": true,
+      "statsOutboundUplink": true,
+      "statsOutboundDownlink": true
+    }
+  },
+
+  "_vision_variant": {
+    "_comment": "Если хотите XTLS-Vision (меньше оверхеда на длинных потоках): в clients добавьте flow, в xhttpSettings жёстко задайте mode. Vision несовместим с другими режимами XHTTP.",
+    "clients_patch": [{ "id": "...", "flow": "xtls-rprx-vision" }],
+    "xhttpSettings_patch": { "mode": "stream-one" }
+  },
+
+  "_next": "Секции outbounds и routing для этой ноды - в xray-transit-outbound.json. Объедините оба файла в один config.json."
+}

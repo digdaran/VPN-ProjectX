@@ -1,0 +1,293 @@
+{
+  "_comment": "ТРАНЗИТ + МАРШРУТИЗАЦИЯ на RU-НОДЕ. Вставляется в тот же config.json, что и xray-ru-entry.json. Каждый outbound - зашифрованный канал к своей выходной ноде. xmux.maxConnections держит число параллельных TLS-соединений на трансграничном стыке ниже порога 3.",
+
+  "outbounds": [
+    {
+      "tag": "out-de",
+      "protocol": "vless",
+      "settings": {
+        "vnext": [
+          {
+            "address": "de.example.com",
+            "port": 443,
+            "users": [
+              {
+                "id": "TRANSIT_UUID_DE",
+                "encryption": "none",
+                "level": 0
+              }
+            ]
+          }
+        ]
+      },
+      "streamSettings": {
+        "network": "xhttp",
+        "security": "reality",
+        "realitySettings": {
+          "serverName": "www.microsoft.com",
+          "fingerprint": "firefox",
+          "publicKey": "PUBLIC_KEY_DE",
+          "shortId": "SHORT_ID_DE",
+          "spiderX": "/"
+        },
+        "xhttpSettings": {
+          "host": "www.microsoft.com",
+          "path": "/cdn/v3/assets",
+          "mode": "auto",
+          "extra": {
+            "xPaddingBytes": "100-1000",
+            "xmux": {
+              "maxConnections": "2-3",
+              "maxConcurrency": 0,
+              "cMaxReuseTimes": "64-128",
+              "hMaxRequestTimes": "800-900",
+              "hMaxReusableSecs": "1800-3000",
+              "hKeepAlivePeriod": 0
+            }
+          }
+        },
+        "sockopt": {
+          "tcpFastOpen": true,
+          "tcpKeepAliveIdle": 100,
+          "tcpcongestion": "bbr"
+        }
+      }
+    },
+
+    {
+      "tag": "out-fr",
+      "protocol": "vless",
+      "settings": {
+        "vnext": [
+          {
+            "address": "fr.example.com",
+            "port": 443,
+            "users": [{ "id": "TRANSIT_UUID_FR", "encryption": "none", "level": 0 }]
+          }
+        ]
+      },
+      "streamSettings": {
+        "network": "xhttp",
+        "security": "reality",
+        "realitySettings": {
+          "serverName": "www.twitch.tv",
+          "fingerprint": "firefox",
+          "publicKey": "PUBLIC_KEY_FR",
+          "shortId": "SHORT_ID_FR",
+          "spiderX": "/"
+        },
+        "xhttpSettings": {
+          "host": "www.twitch.tv",
+          "path": "/api/v2/segments",
+          "mode": "auto",
+          "extra": {
+            "xPaddingBytes": "100-1000",
+            "xmux": {
+              "maxConnections": "2-3",
+              "maxConcurrency": 0,
+              "cMaxReuseTimes": "64-128",
+              "hMaxRequestTimes": "800-900",
+              "hMaxReusableSecs": "1800-3000"
+            }
+          }
+        },
+        "sockopt": { "tcpFastOpen": true, "tcpcongestion": "bbr" }
+      }
+    },
+
+    {
+      "tag": "out-nl",
+      "protocol": "vless",
+      "settings": {
+        "vnext": [
+          {
+            "address": "nl.example.com",
+            "port": 443,
+            "users": [{ "id": "TRANSIT_UUID_NL", "encryption": "none", "level": 0 }]
+          }
+        ]
+      },
+      "streamSettings": {
+        "network": "xhttp",
+        "security": "reality",
+        "realitySettings": {
+          "serverName": "github.com",
+          "fingerprint": "firefox",
+          "publicKey": "PUBLIC_KEY_NL",
+          "shortId": "SHORT_ID_NL",
+          "spiderX": "/"
+        },
+        "xhttpSettings": {
+          "host": "github.com",
+          "path": "/assets/chunk",
+          "mode": "auto",
+          "extra": {
+            "xPaddingBytes": "100-1000",
+            "xmux": {
+              "maxConnections": "2-3",
+              "maxConcurrency": 0,
+              "cMaxReuseTimes": "64-128",
+              "hMaxRequestTimes": "800-900",
+              "hMaxReusableSecs": "1800-3000"
+            }
+          }
+        },
+        "sockopt": { "tcpFastOpen": true, "tcpcongestion": "bbr" }
+      }
+    },
+
+    {
+      "tag": "out-kz",
+      "protocol": "vless",
+      "settings": {
+        "vnext": [
+          {
+            "address": "kz.example.com",
+            "port": 443,
+            "users": [{ "id": "TRANSIT_UUID_KZ", "encryption": "none", "level": 0 }]
+          }
+        ]
+      },
+      "streamSettings": {
+        "network": "xhttp",
+        "security": "reality",
+        "realitySettings": {
+          "serverName": "www.microsoft.com",
+          "fingerprint": "firefox",
+          "publicKey": "PUBLIC_KEY_KZ",
+          "shortId": "SHORT_ID_KZ",
+          "spiderX": "/"
+        },
+        "xhttpSettings": {
+          "host": "www.microsoft.com",
+          "path": "/cdn/v3/media",
+          "mode": "auto",
+          "extra": {
+            "xPaddingBytes": "100-1000",
+            "xmux": {
+              "maxConnections": "2-3",
+              "maxConcurrency": 0,
+              "cMaxReuseTimes": "64-128",
+              "hMaxRequestTimes": "800-900",
+              "hMaxReusableSecs": "1800-3000"
+            }
+          }
+        },
+        "sockopt": { "tcpFastOpen": true, "tcpcongestion": "bbr" }
+      }
+    },
+
+    {
+      "tag": "direct",
+      "protocol": "freedom",
+      "settings": { "domainStrategy": "UseIPv4" }
+    },
+
+    {
+      "tag": "block",
+      "protocol": "blackhole",
+      "settings": { "response": { "type": "http" } }
+    }
+  ],
+
+  "routing": {
+    "domainStrategy": "IPIfNonMatch",
+    "rules": [
+      {
+        "_comment": "1. Xray API - строго локально",
+        "type": "field",
+        "inboundTag": ["api-in"],
+        "outboundTag": "api"
+      },
+      {
+        "_comment": "2. КРИТИЧНО: не пускаем во внутреннюю сеть хостера",
+        "type": "field",
+        "ip": ["geoip:private"],
+        "outboundTag": "block"
+      },
+      {
+        "_comment": "3. КРИТИЧНО для белого IP: торренты убьют репутацию адреса",
+        "type": "field",
+        "protocol": ["bittorrent"],
+        "outboundTag": "block"
+      },
+      {
+        "_comment": "4. КРИТИЧНО: SMTP наружу = спам-абузы = потеря IP",
+        "type": "field",
+        "port": "25,465,587",
+        "outboundTag": "block"
+      },
+      {
+        "_comment": "5. Реклама и телеметрия - экономия трафика",
+        "type": "field",
+        "domain": ["geosite:category-ads-all"],
+        "outboundTag": "block"
+      },
+      {
+        "_comment": "6. Российские сервисы - НАПРЯМУЮ с RU-ноды. Банки и госуслуги блокируют зарубежные IP. Ключевое преимущество схемы: у пользователя одновременно работают и зарубежные сервисы, и Сбербанк.",
+        "type": "field",
+        "domain": [
+          "geosite:category-gov-ru",
+          "geosite:category-ru",
+          "domain:sberbank.ru",
+          "domain:tinkoff.ru",
+          "domain:vtb.ru",
+          "domain:alfabank.ru",
+          "domain:gosuslugi.ru",
+          "domain:nalog.ru",
+          "domain:mos.ru",
+          "domain:ozon.ru",
+          "domain:wildberries.ru",
+          "domain:avito.ru",
+          "domain:yandex.ru",
+          "domain:mail.ru",
+          "domain:vk.com"
+        ],
+        "outboundTag": "direct"
+      },
+      {
+        "_comment": "7. Российские IP - тоже напрямую",
+        "type": "field",
+        "ip": ["geoip:ru"],
+        "outboundTag": "direct"
+      },
+      {
+        "_comment": "8. Выбор страны по пользователю. В Remnawave это делается через сквады и отдельные конфиги нод; здесь - ручной эквивалент через email пользователя.",
+        "type": "field",
+        "user": ["fr-user1@local", "fr-user2@local"],
+        "outboundTag": "out-fr"
+      },
+      {
+        "type": "field",
+        "user": ["nl-user1@local"],
+        "outboundTag": "out-nl"
+      },
+      {
+        "type": "field",
+        "user": ["kz-user1@local"],
+        "outboundTag": "out-kz"
+      },
+      {
+        "_comment": "9. Дефолт - Германия. Чтобы включить балансировку, замените outboundTag на balancerTag: eu-pool",
+        "type": "field",
+        "network": "tcp,udp",
+        "outboundTag": "out-de"
+      }
+    ],
+    "balancers": [
+      {
+        "tag": "eu-pool",
+        "selector": ["out-de", "out-fr", "out-nl"],
+        "strategy": { "type": "leastPing" }
+      }
+    ]
+  },
+
+  "observatory": {
+    "_comment": "Активное измерение задержки до выходных нод - нужно для стратегии leastPing и для алертинга",
+    "subjectSelector": ["out-"],
+    "probeURL": "https://www.gstatic.com/generate_204",
+    "probeInterval": "5m",
+    "enableConcurrency": true
+  }
+}

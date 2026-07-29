@@ -1,0 +1,439 @@
+{
+  "log": {
+    "loglevel": "warning",
+    "access": "none",
+    "dnsLog": false
+  },
+  "dns": {
+    "servers": [
+      "https://dns.google/dns-query",
+      "1.1.1.1",
+      "localhost"
+    ],
+    "queryStrategy": "UseIPv4"
+  },
+  "api": {
+    "tag": "api",
+    "services": [
+      "HandlerService",
+      "StatsService",
+      "LoggerService"
+    ]
+  },
+  "stats": {},
+  "policy": {
+    "levels": {
+      "0": {
+        "statsUserUplink": true,
+        "statsUserDownlink": true,
+        "handshake": 4,
+        "connIdle": 300,
+        "uplinkOnly": 2,
+        "downlinkOnly": 2,
+        "bufferSize": 4
+      }
+    },
+    "system": {
+      "statsInboundUplink": true,
+      "statsInboundDownlink": true,
+      "statsOutboundUplink": true,
+      "statsOutboundDownlink": true
+    }
+  },
+  "inbounds": [
+    {
+      "tag": "vless-xhttp-reality-in",
+      "listen": "0.0.0.0",
+      "port": 443,
+      "protocol": "vless",
+      "settings": {
+        "clients": [
+          {
+            "id": "00000000-0000-0000-0000-000000000000",
+            "email": "user1@local"
+          }
+        ],
+        "decryption": "none"
+      },
+      "streamSettings": {
+        "network": "xhttp",
+        "security": "reality",
+        "realitySettings": {
+          "show": false,
+          "dest": "127.0.0.1:8443",
+          "xver": 0,
+          "serverNames": [
+            "vpn.example.ru"
+          ],
+          "privateKey": "PRIVATE_KEY_FROM_xray_x25519",
+          "shortIds": [
+            "",
+            "0123456789abcdef",
+            "a1b2c3d4",
+            "deadbeef"
+          ]
+        },
+        "xhttpSettings": {
+          "host": "vpn.example.ru",
+          "path": "/assets/media/stream",
+          "mode": "auto",
+          "extra": {
+            "xPaddingBytes": "100-1000",
+            "noSSEHeader": false,
+            "scMaxEachPostBytes": 1000000,
+            "scMinPostsIntervalMs": 30,
+            "scMaxBufferedPosts": 30
+          }
+        }
+      },
+      "sniffing": {
+        "enabled": true,
+        "destOverride": [
+          "http",
+          "tls",
+          "quic"
+        ],
+        "routeOnly": true
+      }
+    },
+    {
+      "tag": "api-in",
+      "listen": "127.0.0.1",
+      "port": 10085,
+      "protocol": "dokodemo-door",
+      "settings": {
+        "address": "127.0.0.1"
+      }
+    }
+  ],
+  "outbounds": [
+    {
+      "tag": "out-de",
+      "protocol": "vless",
+      "settings": {
+        "vnext": [
+          {
+            "address": "de.example.com",
+            "port": 443,
+            "users": [
+              {
+                "id": "TRANSIT_UUID_DE",
+                "encryption": "none",
+                "level": 0
+              }
+            ]
+          }
+        ]
+      },
+      "streamSettings": {
+        "network": "xhttp",
+        "security": "reality",
+        "realitySettings": {
+          "serverName": "www.microsoft.com",
+          "fingerprint": "firefox",
+          "publicKey": "PUBLIC_KEY_DE",
+          "shortId": "SHORT_ID_DE",
+          "spiderX": "/"
+        },
+        "xhttpSettings": {
+          "host": "www.microsoft.com",
+          "path": "/cdn/v3/assets",
+          "mode": "auto",
+          "extra": {
+            "xPaddingBytes": "100-1000",
+            "xmux": {
+              "maxConnections": "2-3",
+              "maxConcurrency": 0,
+              "cMaxReuseTimes": "64-128",
+              "hMaxRequestTimes": "800-900",
+              "hMaxReusableSecs": "1800-3000",
+              "hKeepAlivePeriod": 0
+            }
+          }
+        },
+        "sockopt": {
+          "tcpFastOpen": true,
+          "tcpKeepAliveIdle": 100,
+          "tcpcongestion": "bbr"
+        }
+      }
+    },
+    {
+      "tag": "out-fr",
+      "protocol": "vless",
+      "settings": {
+        "vnext": [
+          {
+            "address": "fr.example.com",
+            "port": 443,
+            "users": [
+              {
+                "id": "TRANSIT_UUID_FR",
+                "encryption": "none",
+                "level": 0
+              }
+            ]
+          }
+        ]
+      },
+      "streamSettings": {
+        "network": "xhttp",
+        "security": "reality",
+        "realitySettings": {
+          "serverName": "www.twitch.tv",
+          "fingerprint": "firefox",
+          "publicKey": "PUBLIC_KEY_FR",
+          "shortId": "SHORT_ID_FR",
+          "spiderX": "/"
+        },
+        "xhttpSettings": {
+          "host": "www.twitch.tv",
+          "path": "/api/v2/segments",
+          "mode": "auto",
+          "extra": {
+            "xPaddingBytes": "100-1000",
+            "xmux": {
+              "maxConnections": "2-3",
+              "maxConcurrency": 0,
+              "cMaxReuseTimes": "64-128",
+              "hMaxRequestTimes": "800-900",
+              "hMaxReusableSecs": "1800-3000"
+            }
+          }
+        },
+        "sockopt": {
+          "tcpFastOpen": true,
+          "tcpcongestion": "bbr"
+        }
+      }
+    },
+    {
+      "tag": "out-nl",
+      "protocol": "vless",
+      "settings": {
+        "vnext": [
+          {
+            "address": "nl.example.com",
+            "port": 443,
+            "users": [
+              {
+                "id": "TRANSIT_UUID_NL",
+                "encryption": "none",
+                "level": 0
+              }
+            ]
+          }
+        ]
+      },
+      "streamSettings": {
+        "network": "xhttp",
+        "security": "reality",
+        "realitySettings": {
+          "serverName": "github.com",
+          "fingerprint": "firefox",
+          "publicKey": "PUBLIC_KEY_NL",
+          "shortId": "SHORT_ID_NL",
+          "spiderX": "/"
+        },
+        "xhttpSettings": {
+          "host": "github.com",
+          "path": "/assets/chunk",
+          "mode": "auto",
+          "extra": {
+            "xPaddingBytes": "100-1000",
+            "xmux": {
+              "maxConnections": "2-3",
+              "maxConcurrency": 0,
+              "cMaxReuseTimes": "64-128",
+              "hMaxRequestTimes": "800-900",
+              "hMaxReusableSecs": "1800-3000"
+            }
+          }
+        },
+        "sockopt": {
+          "tcpFastOpen": true,
+          "tcpcongestion": "bbr"
+        }
+      }
+    },
+    {
+      "tag": "out-kz",
+      "protocol": "vless",
+      "settings": {
+        "vnext": [
+          {
+            "address": "kz.example.com",
+            "port": 443,
+            "users": [
+              {
+                "id": "TRANSIT_UUID_KZ",
+                "encryption": "none",
+                "level": 0
+              }
+            ]
+          }
+        ]
+      },
+      "streamSettings": {
+        "network": "xhttp",
+        "security": "reality",
+        "realitySettings": {
+          "serverName": "www.microsoft.com",
+          "fingerprint": "firefox",
+          "publicKey": "PUBLIC_KEY_KZ",
+          "shortId": "SHORT_ID_KZ",
+          "spiderX": "/"
+        },
+        "xhttpSettings": {
+          "host": "www.microsoft.com",
+          "path": "/cdn/v3/media",
+          "mode": "auto",
+          "extra": {
+            "xPaddingBytes": "100-1000",
+            "xmux": {
+              "maxConnections": "2-3",
+              "maxConcurrency": 0,
+              "cMaxReuseTimes": "64-128",
+              "hMaxRequestTimes": "800-900",
+              "hMaxReusableSecs": "1800-3000"
+            }
+          }
+        },
+        "sockopt": {
+          "tcpFastOpen": true,
+          "tcpcongestion": "bbr"
+        }
+      }
+    },
+    {
+      "tag": "direct",
+      "protocol": "freedom",
+      "settings": {
+        "domainStrategy": "UseIPv4"
+      }
+    },
+    {
+      "tag": "block",
+      "protocol": "blackhole",
+      "settings": {
+        "response": {
+          "type": "http"
+        }
+      }
+    }
+  ],
+  "routing": {
+    "domainStrategy": "IPIfNonMatch",
+    "rules": [
+      {
+        "type": "field",
+        "inboundTag": [
+          "api-in"
+        ],
+        "outboundTag": "api"
+      },
+      {
+        "type": "field",
+        "ip": [
+          "geoip:private"
+        ],
+        "outboundTag": "block"
+      },
+      {
+        "type": "field",
+        "protocol": [
+          "bittorrent"
+        ],
+        "outboundTag": "block"
+      },
+      {
+        "type": "field",
+        "port": "25,465,587",
+        "outboundTag": "block"
+      },
+      {
+        "type": "field",
+        "domain": [
+          "geosite:category-ads-all"
+        ],
+        "outboundTag": "block"
+      },
+      {
+        "type": "field",
+        "domain": [
+          "geosite:category-gov-ru",
+          "geosite:category-ru",
+          "domain:sberbank.ru",
+          "domain:tinkoff.ru",
+          "domain:vtb.ru",
+          "domain:alfabank.ru",
+          "domain:gosuslugi.ru",
+          "domain:nalog.ru",
+          "domain:mos.ru",
+          "domain:ozon.ru",
+          "domain:wildberries.ru",
+          "domain:avito.ru",
+          "domain:yandex.ru",
+          "domain:mail.ru",
+          "domain:vk.com"
+        ],
+        "outboundTag": "direct"
+      },
+      {
+        "type": "field",
+        "ip": [
+          "geoip:ru"
+        ],
+        "outboundTag": "direct"
+      },
+      {
+        "type": "field",
+        "user": [
+          "fr-user1@local",
+          "fr-user2@local"
+        ],
+        "outboundTag": "out-fr"
+      },
+      {
+        "type": "field",
+        "user": [
+          "nl-user1@local"
+        ],
+        "outboundTag": "out-nl"
+      },
+      {
+        "type": "field",
+        "user": [
+          "kz-user1@local"
+        ],
+        "outboundTag": "out-kz"
+      },
+      {
+        "type": "field",
+        "network": "tcp,udp",
+        "outboundTag": "out-de"
+      }
+    ],
+    "balancers": [
+      {
+        "tag": "eu-pool",
+        "selector": [
+          "out-de",
+          "out-fr",
+          "out-nl"
+        ],
+        "strategy": {
+          "type": "leastPing"
+        }
+      }
+    ]
+  },
+  "observatory": {
+    "subjectSelector": [
+      "out-"
+    ],
+    "probeURL": "https://www.gstatic.com/generate_204",
+    "probeInterval": "5m",
+    "enableConcurrency": true
+  }
+}

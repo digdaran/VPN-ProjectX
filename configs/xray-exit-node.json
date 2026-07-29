@@ -1,0 +1,133 @@
+{
+  "_comment": "ВЫХОДНАЯ НОДА (FR / DE / NL / KZ). Принимает ТОЛЬКО транзит с российской ноды. Firewall должен пускать на порт 443 исключительно IP RU-ноды. Второй inbound (direct-in) - аварийный: прямое подключение клиентов в обход RU-ноды, включайте только когда RU-нода недоступна.",
+
+  "log": { "loglevel": "warning", "access": "none" },
+
+  "dns": {
+    "servers": ["https://dns.google/dns-query", "1.1.1.1", "localhost"],
+    "queryStrategy": "UseIPv4"
+  },
+
+  "inbounds": [
+    {
+      "tag": "transit-in",
+      "listen": "0.0.0.0",
+      "port": 443,
+      "protocol": "vless",
+      "settings": {
+        "clients": [
+          {
+            "id": "TRANSIT_UUID_DE",
+            "email": "transit-ru@internal"
+          }
+        ],
+        "decryption": "none"
+      },
+      "streamSettings": {
+        "network": "xhttp",
+        "security": "reality",
+        "realitySettings": {
+          "show": false,
+          "dest": "www.microsoft.com:443",
+          "xver": 0,
+          "serverNames": ["www.microsoft.com"],
+          "privateKey": "PRIVATE_KEY_DE",
+          "shortIds": ["SHORT_ID_DE"],
+          "_comment_dest": "Здесь классический Reality (не self-steal) допустим: сервер стоит в Европе, донор www.microsoft.com имеет глобальный CDN с PoP везде, ASN-несоответствие несущественно. Плохие доноры: apple.com/icloud.com (Apple держит IP в собственных ASN), любые мелкие сайты."
+        },
+        "xhttpSettings": {
+          "host": "www.microsoft.com",
+          "path": "/cdn/v3/assets",
+          "mode": "auto",
+          "extra": {
+            "xPaddingBytes": "100-1000",
+            "scMaxEachPostBytes": 1000000,
+            "scMinPostsIntervalMs": 30
+          }
+        }
+      },
+      "sniffing": {
+        "enabled": true,
+        "destOverride": ["http", "tls", "quic"],
+        "routeOnly": false
+      }
+    },
+
+    {
+      "tag": "direct-in",
+      "listen": "0.0.0.0",
+      "port": 8443,
+      "protocol": "vless",
+      "settings": {
+        "clients": [],
+        "decryption": "none"
+      },
+      "streamSettings": {
+        "network": "xhttp",
+        "security": "reality",
+        "realitySettings": {
+          "show": false,
+          "dest": "www.twitch.tv:443",
+          "xver": 0,
+          "serverNames": ["www.twitch.tv"],
+          "privateKey": "PRIVATE_KEY_DE_FALLBACK",
+          "shortIds": ["FALLBACK_SHORT_ID"]
+        },
+        "xhttpSettings": {
+          "host": "www.twitch.tv",
+          "path": "/fallback/segments",
+          "mode": "auto",
+          "extra": { "xPaddingBytes": "100-1000" }
+        }
+      },
+      "sniffing": { "enabled": true, "destOverride": ["http", "tls", "quic"] },
+      "_comment": "АВАРИЙНЫЙ inbound. Держите clients пустым в обычном режиме. Помните: прямое подключение из РФ на зарубежный IP попадает под tcp 16-20 / l4-25 - работать будет хуже основной схемы."
+    },
+
+    {
+      "tag": "api-in",
+      "listen": "127.0.0.1",
+      "port": 10085,
+      "protocol": "dokodemo-door",
+      "settings": { "address": "127.0.0.1" }
+    }
+  ],
+
+  "outbounds": [
+    { "tag": "direct", "protocol": "freedom", "settings": { "domainStrategy": "UseIPv4" } },
+    { "tag": "block", "protocol": "blackhole", "settings": { "response": { "type": "http" } } }
+  ],
+
+  "api": { "tag": "api", "services": ["HandlerService", "StatsService", "LoggerService"] },
+  "stats": {},
+
+  "policy": {
+    "levels": {
+      "0": {
+        "statsUserUplink": true,
+        "statsUserDownlink": true,
+        "handshake": 4,
+        "connIdle": 300,
+        "bufferSize": 4
+      }
+    },
+    "system": {
+      "statsInboundUplink": true,
+      "statsInboundDownlink": true,
+      "statsOutboundUplink": true,
+      "statsOutboundDownlink": true
+    }
+  },
+
+  "routing": {
+    "domainStrategy": "IPIfNonMatch",
+    "rules": [
+      { "type": "field", "inboundTag": ["api-in"], "outboundTag": "api" },
+      { "type": "field", "ip": ["geoip:private"], "outboundTag": "block" },
+      { "type": "field", "protocol": ["bittorrent"], "outboundTag": "block" },
+      { "type": "field", "port": "25,465,587", "outboundTag": "block" },
+      { "type": "field", "domain": ["geosite:category-ads-all"], "outboundTag": "block" },
+      { "type": "field", "network": "tcp,udp", "outboundTag": "direct" }
+    ]
+  }
+}
