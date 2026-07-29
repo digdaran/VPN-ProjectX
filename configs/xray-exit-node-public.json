@@ -1,6 +1,8 @@
 {
   "_comment": "ВЫХОДНАЯ НОДА С ПУБЛИЧНЫМ ВХОДОМ. Замена xray-exit-node.json, когда нужны прямые подключения клиентов помимо транзита с RU-ноды. Три inbound на разных портах: 443 - транзит (только с IP RU-ноды), 8443 - прямой вход XHTTP, 2096 - прямой вход gRPC (запасной транспорт). Подробности и ожидания от прямого входа - в docs/multi-entry.md.",
 
+  "_comment_match_transit": "КРИТИЧНО ПЕРЕД ВЫКАТКОЙ. Это касается ТОЛЬКО inbound'а transit-in (не direct-xhttp-in/direct-grpc-in - те для прямых клиентов и ни с чем сверять не надо). Файл - один шаблон на все 4 выходные ноды, ниже приведён со значениями для DE. serverNames/dest/xhttpSettings.host/path у transit-in - это ОДНА И ТА ЖЕ Reality-пара с соответствующим outbound'ом (out-de/out-fr/out-nl/out-kz) в xray-transit-outbound.json, и они обязаны совпадать дословно. При развёртывании на другую страну замените значения на: FR -> www.twitch.tv, /api/v2/segments; NL -> github.com, /assets/chunk; KZ -> www.microsoft.com, /cdn/v3/media (см. xray-transit-outbound.json). Несовпадение SNI/dest/path = Reality-рукопожатие с RU-ноды не устанавливается вообще, без внятной ошибки в логах. scripts/50-preflight.sh сверяет это автоматически, если передать оба файла.",
+
   "log": { "loglevel": "warning", "access": "none" },
 
   "dns": {
@@ -28,7 +30,8 @@
           "xver": 0,
           "serverNames": ["www.microsoft.com"],
           "privateKey": "PRIVATE_KEY_DE_TRANSIT",
-          "shortIds": ["SHORT_ID_DE_TRANSIT"]
+          "shortIds": ["SHORT_ID_DE_TRANSIT"],
+          "_comment_match": "dest/serverNames этого inbound'а должны совпадать с realitySettings.serverName + xhttpSettings.host/path соответствующего out-* блока в xray-transit-outbound.json - см. _comment_match_transit в начале файла."
         },
         "xhttpSettings": {
           "host": "www.microsoft.com",
