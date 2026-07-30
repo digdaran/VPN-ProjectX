@@ -15,7 +15,7 @@
 #     получает тот же порт через --ssh-port — то есть 00-hardening.sh только
 #     закрепляет текущий порт, не переезжает на новый;
 #   - шаги в UI панели (создание суперадмина, Nodes → Management → +,
-#     копирование docker-compose.yml/SSL_CERT, назначение config-profile) —
+#     копирование docker-compose.yml, назначение config-profile) —
 #     их через недоверенный канал автоматизировать дороже, чем сделать руками;
 #   - scripts/40-keygen.sh, scripts/50-preflight.sh, scripts/60-entry-test.sh,
 #     scripts/90-healthcheck.sh — идут отдельными шагами после (см. вывод
@@ -129,7 +129,7 @@ deploy_ru_entry() {
   warn "[$name] РУЧНОЙ шаг ПЕРЕД этим: Nodes → Management → + в панели, скопировать docker-compose.yml"
   remote_run "$user" "$host" "$port" "$SCRIPT_DIR/20-node-install.sh" \
     --panel-ip "$panel_ip" --node-port "$node_port"
-  warn "[$name] РУЧНОЙ шаг: вставьте SSL_CERT из панели в /opt/remnanode/.env на $host, затем docker compose up -d"
+  warn "[$name] РУЧНОЙ шаг: вставьте SECRET_KEY из сгенерированного панелью docker-compose.yml в /opt/remnanode/.env на $host, затем docker compose up -d"
 }
 
 # mode: exit-fresh | exit-coexist
@@ -159,7 +159,7 @@ deploy_exit() {
   warn "[$name] РУЧНОЙ шаг ПЕРЕД этим: Nodes → Management → + в панели, скопировать docker-compose.yml"
   remote_run "$user" "$host" "$port" "$SCRIPT_DIR/20-node-install.sh" \
     --panel-ip "$panel_ip" --node-port "$node_port"
-  warn "[$name] РУЧНОЙ шаг: вставьте SSL_CERT из панели в /opt/remnanode/.env на $host, затем docker compose up -d"
+  warn "[$name] РУЧНОЙ шаг: вставьте SECRET_KEY из сгенерированного панелью docker-compose.yml в /opt/remnanode/.env на $host, затем docker compose up -d"
 
   if [[ "$mode" == "exit-coexist" ]]; then
     warn "[$name] Config-profile этой ноды в панели должен использовать xray-exit-node.json с inbound transit-in на порту $transit_port — сверьте с соответствующим out-* в xray-transit-outbound.json на RU-ноде (ARCHITECTURE.md, DECISIONS.md ADR-0014) и прогоните scripts/50-preflight.sh перед выкаткой"

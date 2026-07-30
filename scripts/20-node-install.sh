@@ -7,14 +7,22 @@
 #   sudo bash 20-node-install.sh --panel-ip 1.2.3.4 --node-port 2222
 #
 # Порядок:
-#   1. В панели: Nodes → Management → + → создайте ноду, скопируйте SSL_CERT
+#   1. В панели: Nodes → Management → + → создайте ноду (имя, адрес, порт —
+#      тот же, что в --node-port), нажмите "Copy docker-compose.yml"
 #   2. Запустите этот скрипт
-#   3. Вставьте SSL_CERT в /opt/remnanode/.env
+#   3. Из скопированного в п.1 текста возьмите ТОЛЬКО значение SECRET_KEY
+#      и вставьте его в /opt/remnanode/.env
 #   4. cd /opt/remnanode && docker compose up -d
+#
+# ВАЖНО: у remnawave/node НЕТ переменной SSL_CERT — образ ждёт NODE_PORT и
+# SECRET_KEY (проверено на реальном контейнере: без них падает с
+# "NODE_PORT: Required" / "SECRET_KEY: Required"). SECRET_KEY генерируется
+# панелью один раз на ноду и приходит только внутри сгенерированного
+# docker-compose.yml — отдельного поля под него в UI нет.
 #
 set -euo pipefail
 
-PANEL_IP=""; NODE_PORT="2222"; SSL_CERT=""
+PANEL_IP=""; NODE_PORT="2222"; SECRET_KEY=""
 DIR="/opt/remnanode"
 
 log()  { printf '\033[1;32m[+]\033[0m %s\n' "$*"; }
@@ -23,10 +31,10 @@ die()  { printf '\033[1;31m[x]\033[0m %s\n' "$*" >&2; exit 1; }
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --panel-ip)  PANEL_IP="$2"; shift 2 ;;
-    --node-port) NODE_PORT="$2"; shift 2 ;;
-    --ssl-cert)  SSL_CERT="$2"; shift 2 ;;
-    --dir)       DIR="$2"; shift 2 ;;
+    --panel-ip)   PANEL_IP="$2"; shift 2 ;;
+    --node-port)  NODE_PORT="$2"; shift 2 ;;
+    --secret-key) SECRET_KEY="$2"; shift 2 ;;
+    --dir)        DIR="$2"; shift 2 ;;
     *) die "Неизвестный аргумент: $1" ;;
   esac
 done
@@ -41,11 +49,14 @@ log "Создание .env"
 cat > "$DIR/.env" <<EOF
 ### Порт, на котором нода слушает управляющие запросы от панели.
 ### Наружу быть открытым НЕ должен — только с IP панели.
-APP_PORT=$NODE_PORT
+### Обязан совпадать с портом, указанным при создании этой ноды в панели.
+NODE_PORT=$NODE_PORT
 
-### Скопируйте значение SSL_CERT из панели:
-### Nodes → Management → выбранная нода → docker-compose.yml
-SSL_CERT=${SSL_CERT:-PASTE_SSL_CERT_FROM_PANEL_HERE}
+### Скопируйте значение SECRET_KEY из сгенерированного панелью
+### docker-compose.yml для этой ноды: Nodes → Management → нода →
+### "Copy docker-compose.yml". Отдельного поля под него в UI нет —
+### оно только внутри этого сгенерированного текста.
+SECRET_KEY=${SECRET_KEY:-PASTE_SECRET_KEY_FROM_PANEL_HERE}
 EOF
 chmod 600 "$DIR/.env"
 
@@ -102,15 +113,17 @@ if ufw status | grep -E "^${NODE_PORT}/tcp\s+ALLOW\s+Anywhere" >/dev/null 2>&1; 
   warn "ВНИМАНИЕ: порт $NODE_PORT открыт для всех. Закройте: ufw delete allow $NODE_PORT/tcp"
 fi
 
-if grep -q 'PASTE_SSL_CERT_FROM_PANEL_HERE' "$DIR/.env"; then
+if grep -q 'PASTE_SECRET_KEY_FROM_PANEL_HERE' "$DIR/.env"; then
   cat <<EOF
 
 ════════════════════════════════════════════════════════════════
   Нода подготовлена, но НЕ запущена
 ════════════════════════════════════════════════════════════════
   Осталось:
-   1. Вставьте SSL_CERT из панели в $DIR/.env
-   2. cd $DIR && docker compose up -d && docker compose logs -f
+   1. В панели создайте ноду (если не создали) с портом $NODE_PORT,
+      нажмите "Copy docker-compose.yml", возьмите оттуда SECRET_KEY
+   2. Вставьте это значение в $DIR/.env
+   3. cd $DIR && docker compose up -d && docker compose logs -f
 
   Каталог     : $DIR
   Порт ноды   : $NODE_PORT (только с $PANEL_IP)
@@ -124,7 +137,7 @@ if grep -q 'PASTE_SSL_CERT_FROM_PANEL_HERE' "$DIR/.env"; then
 ════════════════════════════════════════════════════════════════
 EOF
 else
-  log "SSL_CERT задан, запускаю"
+  log "SECRET_KEY задан, запускаю"
   docker compose pull && docker compose up -d
   sleep 5
   docker compose ps
