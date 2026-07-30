@@ -92,9 +92,14 @@ deploy_panel() {
   local name="$1" host="$2" user="$3" port="$4" extra="$5"
   local domain sub_domain email
   domain="$(extra_get "$extra" domain)"
-  sub_domain="$(extra_get "$extra" sub_domain "$domain")"
+  sub_domain="$(extra_get "$extra" sub_domain)"
   email="$(extra_get "$extra" email)"
   [[ -n "$domain" && -n "$email" ]] || die "[$name] нужны domain и email в extra"
+  # sub_domain обязан отличаться от domain — 10-panel-install.sh теперь сам
+  # откажется запускаться, если это не так (см. DECISIONS.md / ADR про
+  # конфликт server_name в nginx), но лучше поймать это здесь, до SSH.
+  [[ -n "$sub_domain" ]] || die "[$name] нужен sub_domain в extra — ОТДЕЛЬНЫЙ домен, не тот же, что domain"
+  [[ "$sub_domain" != "$domain" ]] || die "[$name] sub_domain не должен совпадать с domain"
 
   log "[$name] панель — hardening"
   remote_run "$user" "$host" "$port" "$SCRIPT_DIR/00-hardening.sh" \
