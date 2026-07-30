@@ -8,9 +8,13 @@
 #   bash 40-keygen.sh --name de --sni www.microsoft.com
 #   bash 40-keygen.sh --name ru --sni vpn.example.ru --selfsteal
 #
+# Если порт 443 на сервере уже занят чем-то своим (например x-ui) —
+# сосуществование через нестандартный транзитный порт:
+#   bash 40-keygen.sh --name de --sni www.microsoft.com --port 8443
+#
 set -euo pipefail
 
-NAME="node"; SNI="www.microsoft.com"; SELFSTEAL=0; COUNT_SID=3
+NAME="node"; SNI="www.microsoft.com"; SELFSTEAL=0; COUNT_SID=3; PORT="443"
 
 die() { printf '\033[1;31m[x]\033[0m %s\n' "$*" >&2; exit 1; }
 
@@ -20,6 +24,7 @@ while [[ $# -gt 0 ]]; do
     --sni)       SNI="$2"; shift 2 ;;
     --selfsteal) SELFSTEAL=1; shift ;;
     --sids)      COUNT_SID="$2"; shift 2 ;;
+    --port)      PORT="$2"; shift 2 ;;
     *) die "Неизвестный аргумент: $1" ;;
   esac
 done
@@ -74,6 +79,7 @@ cat <<EOF
   XHTTP path  : $XPATH
   SNI         : $SNI
   dest        : $DEST   ($DEST_NOTE)
+  port        : $PORT$([[ "$PORT" != "443" ]] && echo '   (нестандартный — сверьте с xray-transit-outbound.json и firewall)')
 
 ────────────────────────────────────────────────────────────────
   СЕРВЕР (inbound)
@@ -81,7 +87,7 @@ cat <<EOF
 {
   "tag": "vless-xhttp-reality-$NAME",
   "listen": "0.0.0.0",
-  "port": 443,
+  "port": $PORT,
   "protocol": "vless",
   "settings": {
     "clients": [{ "id": "$UUID", "email": "user@$NAME" }],
@@ -117,7 +123,7 @@ cat <<EOF
   "settings": {
     "vnext": [{
       "address": "$SNI",
-      "port": 443,
+      "port": $PORT,
       "users": [{ "id": "$UUID", "encryption": "none" }]
     }]
   },
@@ -148,7 +154,7 @@ cat <<EOF
 ────────────────────────────────────────────────────────────────
   ССЫЛКА (для мобильных клиентов)
 ────────────────────────────────────────────────────────────────
-vless://$UUID@$SNI:443?type=xhttp&security=reality&sni=$SNI&fp=firefox&pbk=$PUBLIC_KEY&sid=${SIDS[0]}&path=$(printf '%s' "$XPATH" | sed 's|/|%2F|g')&mode=auto#${NAME^^}
+vless://$UUID@$SNI:$PORT?type=xhttp&security=reality&sni=$SNI&fp=firefox&pbk=$PUBLIC_KEY&sid=${SIDS[0]}&path=$(printf '%s' "$XPATH" | sed 's|/|%2F|g')&mode=auto#${NAME^^}
 
 ════════════════════════════════════════════════════════════════
   Не забудьте:

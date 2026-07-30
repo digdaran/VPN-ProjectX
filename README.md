@@ -64,6 +64,8 @@ scripts/
   50-preflight.sh                проверка конфигов перед выкаткой
   60-entry-test.sh               проверка входов НА ОБЪЁМЕ (ловит tcp 16-20)
   90-healthcheck.sh              мониторинг + алерты в Telegram
+  deploy.sh                      оркестратор: прогоняет 00→30 по SSH на всех серверах инвентаря
+  deploy.conf.example            шаблон инвентаря для deploy.sh
 api/
   remnawave_client.py            асинхронный клиент API + готовые сценарии
   webhook_server.py              приёмник вебхуков (FastAPI, HMAC)
@@ -235,6 +237,9 @@ dokodemo-door) — [`DECISIONS.md`](DECISIONS.md), ADR-0007.
 9. Проверка            → scripts/90-healthcheck.sh + docs/tspu-checklist.md
 ```
 
+Шаги 2–5 для всех серверов сразу можно прогнать одной командой через
+`scripts/deploy.sh` — см. §5.6.
+
 ### 5.0. DNS
 
 | Запись | Куда | Проксирование CF |
@@ -290,6 +295,15 @@ ufw allow from <IP_RU_НОДЫ> to any port 443 proto tcp   # транзит —
 
 Транзитный inbound выходной ноды не должен быть доступен из интернета вообще. Это и защита от сканеров, и от того, что кто-то начнёт ходить на выход напрямую и спалит его.
 
+**Если на сервере уже работает что-то своё (например x-ui)** — не обязательно сносить: Remnanode встаёт рядом на отдельном порту. См. `ARCHITECTURE.md §7.1` и `DECISIONS.md` ADR-0014 — коротко:
+
+```bash
+sudo bash 00-hardening.sh --role node --panel-ip <IP_ПАНЕЛИ> \
+     --exit-ips <IP_RU_НОДЫ> --transit-port 8443 --no-fw-reset
+```
+
+`--no-fw-reset` не трогает существующий firewall, `--transit-port` — порт, заведомо свободный на этом сервере (проверьте `ss -tlnp` заранее). Дальше применяется `configs/xray-exit-node.json` (не `-public`) с этим же портом на `transit-in`, и тем же портом — `out-*` в `xray-transit-outbound.json` на RU-ноде.
+
 ### 5.4. RU-нода: self-steal
 
 Это самый важный шаг. Порядок именно такой:
@@ -336,6 +350,20 @@ curl -sSI https://vpn.вашдомен.ru/ | head -20
 | 5 | всё остальное | `out-de` (дефолт) | — |
 
 Правило 3 — это ещё и мощная фича: у пользователя одновременно работают и заблокированные зарубежные сервисы, и российские банки. Обычный зарубежный VPN так не умеет.
+
+### 5.6. Автоматизация: deploy.sh
+
+Шаги 5.1–5.4 (везде, кроме шагов в UI панели) можно прогнать одной командой по всем серверам сразу:
+
+```bash
+cp scripts/deploy.conf.example scripts/deploy.conf   # заполнить своими значениями
+bash scripts/deploy.sh --inventory scripts/deploy.conf --dry-run   # сначала так, без подключения
+bash scripts/deploy.sh --inventory scripts/deploy.conf             # затем по-настоящему (спросит подтверждение)
+```
+
+Роли в инвентаре — `panel` / `ru-entry` / `exit-fresh` / `exit-coexist` (для сервера с уже работающим x-ui — см. §5.3). Формат — `scripts/deploy.conf.example`, подробности — `ARCHITECTURE.md §7.2`, обоснование выбора именно такого инструмента — `DECISIONS.md` ADR-0015.
+
+`deploy.sh` **не** меняет SSH-порт и **не** делает шаги в UI панели (суперадмин, `Nodes → Management → +`, config-profile) — это остаётся руками между вызовами.
 
 ---
 

@@ -1,0 +1,36 @@
+# deploy.conf — инвентарь серверов для scripts/deploy.sh
+#
+# Скопируйте в deploy.conf (уже в .gitignore-стиле — не коммитьте с реальными
+# IP/доменами) и заполните своими значениями. Формат одной строки:
+#
+#   name|role|host|ssh_user|ssh_port|extra
+#
+# role:
+#   panel        — управляющий контур (Remnawave Panel + Postgres + Sub Page)
+#   ru-entry     — российская нода-вход (self-steal)
+#   exit-fresh   — зарубежная выходная нода, сервер чистый
+#   exit-coexist — зарубежная выходная нода, на сервере УЖЕ работает что-то
+#                  своё (например x-ui) — 00-hardening.sh не сбрасывает
+#                  firewall, Remnanode встаёт на отдельный транзитный порт
+#
+# ssh_port — порт, которым СЕЙЧАС пользуется deploy.sh для подключения.
+# deploy.sh НЕ меняет SSH-порт автоматически (риск потерять доступ к серверу
+# без присмотра выше цены автоматизации) — если хотите сменить порт, это
+# отдельный ручной шаг с проверкой входа в новом окне (см. README).
+#
+# extra — role-специфичные key=value через ';':
+#   panel        : domain=...;sub_domain=...;email=...
+#   ru-entry     : panel_ip=...;domain=...;email=...;node_port=2222 (необязательно)
+#   exit-fresh   : panel_ip=...;ru_ip=...;node_port=2222 (необязательно)
+#   exit-coexist : panel_ip=...;ru_ip=...;transit_port=8443;node_port=2222 (необязательно)
+#
+# transit_port для exit-coexist ОБЯЗАН быть свободным на сервере — тем портом,
+# который НЕ занят уже работающим x-ui. Проверьте перед запуском:
+#   ssh -p <ssh_port> <ssh_user>@<host> 'ss -tlnp | grep <transit_port>'
+# Если что-то слушает — возьмите другой порт.
+
+# Примеры (замените на свои):
+# panel-de|panel|panel.example.com|root|22|domain=panel.example.com;sub_domain=sub.example.com;email=you@mail.com
+# ru-1|ru-entry|1.2.3.4|root|22|panel_ip=10.0.0.1;domain=vpn.example.ru;email=you@mail.com
+# fr-1|exit-fresh|5.6.7.8|root|22|panel_ip=10.0.0.1;ru_ip=1.2.3.4
+# de-1|exit-coexist|9.9.9.9|root|22|panel_ip=10.0.0.1;ru_ip=1.2.3.4;transit_port=8443

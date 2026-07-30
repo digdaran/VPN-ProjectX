@@ -8,6 +8,10 @@
 #   sudo bash 00-hardening.sh --role panel --ssh-port 22022
 #   sudo bash 00-hardening.sh --role node  --panel-ip 1.2.3.4 --ru-entry --exit-ips "5.6.7.8"
 #
+# На сервере, где уже работает что-то своё (например x-ui) — режим сосуществования:
+#   sudo bash 00-hardening.sh --role node --panel-ip 1.2.3.4 --exit-ips "5.6.7.8" \
+#        --transit-port 8443 --no-fw-reset
+#
 set -euo pipefail
 
 ROLE=""
@@ -16,6 +20,8 @@ SSH_PORT="22022"
 RU_ENTRY=0
 EXIT_IPS=""
 NODE_PORT="2222"
+TRANSIT_PORT="443"
+NO_FW_RESET=0
 DISABLE_IPV6=0
 
 log()  { printf '\033[1;32m[+]\033[0m %s\n' "$*"; }
@@ -30,6 +36,8 @@ while [[ $# -gt 0 ]]; do
     --node-port) NODE_PORT="$2"; shift 2 ;;
     --ru-entry)  RU_ENTRY=1; shift ;;
     --exit-ips)  EXIT_IPS="$2"; shift 2 ;;
+    --transit-port) TRANSIT_PORT="$2"; shift 2 ;;
+    --no-fw-reset)  NO_FW_RESET=1; shift ;;
     --disable-ipv6) DISABLE_IPV6=1; shift ;;
     *) die "Неизвестный аргумент: $1" ;;
   esac
@@ -152,9 +160,17 @@ warn "SSH теперь на порту $SSH_PORT. НЕ ЗАКРЫВАЙТЕ те
 
 # ── Firewall ───────────────────────────────────────────────────────────────
 log "Настройка ufw"
-ufw --force reset >/dev/null
-ufw default deny incoming
-ufw default allow outgoing
+if [[ $NO_FW_RESET -eq 1 ]]; then
+  warn "Режим сосуществования (--no-fw-reset): ufw НЕ сбрасывается и default-policy не трогается."
+  warn "На сервере уже что-то работает (например x-ui) — ниже только ДОБАВЛЯЮТСЯ нужные правила поверх текущих."
+  if ! ufw status | grep -q '^Status: active'; then
+    warn "ufw сейчас неактивен. Проверьте вручную перед включением: ufw status verbose, iptables -L -n."
+  fi
+else
+  ufw --force reset >/dev/null
+  ufw default deny incoming
+  ufw default allow outgoing
+fi
 ufw allow "$SSH_PORT"/tcp comment 'SSH'
 
 case "$ROLE" in
@@ -170,15 +186,18 @@ case "$ROLE" in
       ufw allow 443/tcp comment 'Client entry (Reality)'
       log "Роль: RU-ВХОД. Порт 443 открыт публично."
     else
-      # Выходная нода: 443 только с российской ноды
+      # Выходная нода: транзитный порт только с российской ноды.
+      # По умолчанию 443, но при сосуществовании с уже занятым портом
+      # (см. --no-fw-reset) укажите свободный через --transit-port.
       if [[ -n "$EXIT_IPS" ]]; then
         for ip in $EXIT_IPS; do
-          ufw allow from "$ip" to any port 443 proto tcp comment 'Transit from RU gate'
+          ufw allow from "$ip" to any port "$TRANSIT_PORT" proto tcp comment 'Transit from RU gate'
         done
-        log "Роль: ВЫХОД. Порт 443 открыт только для: $EXIT_IPS"
+        log "Роль: ВЫХОД. Порт $TRANSIT_PORT открыт только для: $EXIT_IPS"
+        [[ "$TRANSIT_PORT" != "443" ]] && warn "Транзитный порт нестандартный ($TRANSIT_PORT) — убедитесь, что xray-transit-outbound.json на RU-ноде и config-profile этой ноды в панели используют тот же порт (см. ARCHITECTURE.md)."
       else
-        warn "Не указан --exit-ips: порт 443 НЕ открыт. Транзит работать не будет."
-        warn "Добавьте вручную: ufw allow from <IP_RU_НОДЫ> to any port 443 proto tcp"
+        warn "Не указан --exit-ips: порт $TRANSIT_PORT НЕ открыт. Транзит работать не будет."
+        warn "Добавьте вручную: ufw allow from <IP_RU_НОДЫ> to any port $TRANSIT_PORT proto tcp"
       fi
     fi
     ;;
@@ -207,6 +226,10 @@ fi
 
 # ── fail2ban ───────────────────────────────────────────────────────────────
 log "Настройка fail2ban"
+if [[ $NO_FW_RESET -eq 1 && -f /etc/fail2ban/jail.local ]]; then
+  cp /etc/fail2ban/jail.local "/etc/fail2ban/jail.local.bak-$(date +%s)"
+  warn "/etc/fail2ban/jail.local уже существовал — сохранён бэкап рядом перед перезаписью"
+fi
 cat > /etc/fail2ban/jail.local <<EOF
 [DEFAULT]
 bantime  = 24h
@@ -258,7 +281,8 @@ cat <<EOF
   Подготовка завершена. Роль: $ROLE
 ════════════════════════════════════════════════════════════════
   SSH порт        : $SSH_PORT  (только по ключу)
-  Firewall        : ufw активен
+  Firewall        : ufw активен$([[ $NO_FW_RESET -eq 1 ]] && echo ' (режим сосуществования: default-policy не менялась)')
+  Транзитный порт : $TRANSIT_PORT
   Congestion ctrl : $(sysctl -n net.ipv4.tcp_congestion_control)
   Docker          : $(docker --version 2>/dev/null || echo 'не установлен')
   Исходящий SMTP  : заблокирован
