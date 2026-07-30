@@ -15,6 +15,16 @@
 #   TG_BOT_TOKEN="..."
 #   TG_CHAT_ID="..."
 #
+#   # Опционально: если узел, откуда запускается healthcheck, сам не может
+#   # достучаться до api.telegram.org напрямую (например панель в РФ, и
+#   # Telegram у вашего провайдера режется по SNI) — шлём через SSH-туннель
+#   # (SOCKS5) на любой узел с нормальным доступом. Ключ должен быть добавлен
+#   # в authorized_keys того узла с ограничением
+#   # 'restrict,port-forwarding,permitopen="api.telegram.org:443"' — тогда
+#   # им нельзя воспользоваться ни для чего, кроме проброса до Telegram.
+#   TG_RELAY_HOST="fr.example.com"
+#   TG_RELAY_KEY="/root/.ssh/tg_relay"
+#
 set -uo pipefail
 
 CONFIG="/opt/healthcheck.conf"
@@ -173,10 +183,26 @@ fi
 
 # ── Уведомление в Telegram ─────────────────────────────────────────────────
 if [[ $NOTIFY -eq 1 && ${#FAILURES[@]} -gt 0 && -n "${TG_BOT_TOKEN:-}" && -n "${TG_CHAT_ID:-}" ]]; then
-  curl -sS --max-time 15 -X POST \
-    "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
-    -d "chat_id=${TG_CHAT_ID}" \
-    --data-urlencode "text=$STATUS_LINE" >/dev/null && echo "Уведомление отправлено"
+  if [[ -n "${TG_RELAY_HOST:-}" ]]; then
+    # Telegram недоступен напрямую (узел в РФ и т.п.) — временный SOCKS5
+    # через ограниченный ключ, только на время отправки одного сообщения.
+    RELAY_KEY="${TG_RELAY_KEY:-/root/.ssh/tg_relay}"
+    RELAY_PORT=$(( (RANDOM % 5000) + 20000 ))
+    ssh -o BatchMode=yes -o ConnectTimeout=6 -o StrictHostKeyChecking=accept-new \
+        -i "$RELAY_KEY" -D "$RELAY_PORT" -N "root@$TG_RELAY_HOST" &
+    RELAY_PID=$!
+    sleep 2
+    curl -sS --max-time 15 -X POST --socks5-hostname "127.0.0.1:$RELAY_PORT" \
+      "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
+      -d "chat_id=${TG_CHAT_ID}" \
+      --data-urlencode "text=$STATUS_LINE" >/dev/null && echo "Уведомление отправлено (через $TG_RELAY_HOST)"
+    kill "$RELAY_PID" 2>/dev/null
+  else
+    curl -sS --max-time 15 -X POST \
+      "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
+      -d "chat_id=${TG_CHAT_ID}" \
+      --data-urlencode "text=$STATUS_LINE" >/dev/null && echo "Уведомление отправлено"
+  fi
 fi
 
 exit $EXIT_CODE
