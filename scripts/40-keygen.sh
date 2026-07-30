@@ -45,14 +45,18 @@ if [[ -z "$ADDRESS" ]]; then
 fi
 
 # ── Поиск xray ─────────────────────────────────────────────────────────────
+# Ключи нужны ДО того, как Remnanode впервые запущен (у него ещё нет
+# SECRET_KEY/конфига на этом этапе экзистанс-курицы-и-яйца в exit-coexist
+# сценарии) - поэтому разовый контейнер как fallback, а не только running remnanode.
 XRAY=""
 if command -v xray >/dev/null 2>&1; then
   XRAY="xray"
 elif docker ps --format '{{.Names}}' 2>/dev/null | grep -q '^remnanode$'; then
   XRAY="docker exec remnanode xray"
+elif command -v docker >/dev/null 2>&1; then
+  XRAY="docker run --rm teddysun/xray xray"
 else
-  die "Не найден xray. Установите бинарь или запустите на узле с контейнером remnanode.
-     Разовый вариант:  docker run --rm teddysun/xray xray x25519"
+  die "Не найден xray и недоступен docker. Установите бинарь xray или docker."
 fi
 
 KEYS="$($XRAY x25519)"
