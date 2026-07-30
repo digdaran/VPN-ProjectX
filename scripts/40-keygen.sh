@@ -5,7 +5,7 @@
 # Генерирует полный набор параметров для одной ноды и печатает
 # готовые фрагменты серверного и клиентского конфига.
 #
-#   bash 40-keygen.sh --name de --sni www.microsoft.com
+#   bash 40-keygen.sh --name de --sni www.microsoft.com --address de.example.com
 #   bash 40-keygen.sh --name ru --sni vpn.example.ru --selfsteal
 #
 # Если порт 443 на сервере уже занят чем-то своим (например x-ui) —
@@ -14,7 +14,7 @@
 #
 set -euo pipefail
 
-NAME="node"; SNI="www.microsoft.com"; SELFSTEAL=0; COUNT_SID=3; PORT="443"
+NAME="node"; SNI="www.microsoft.com"; SELFSTEAL=0; COUNT_SID=3; PORT="443"; ADDRESS=""
 
 die() { printf '\033[1;31m[x]\033[0m %s\n' "$*" >&2; exit 1; }
 
@@ -25,9 +25,24 @@ while [[ $# -gt 0 ]]; do
     --selfsteal) SELFSTEAL=1; shift ;;
     --sids)      COUNT_SID="$2"; shift 2 ;;
     --port)      PORT="$2"; shift 2 ;;
+    --address)   ADDRESS="$2"; shift 2 ;;
     *) die "Неизвестный аргумент: $1" ;;
   esac
 done
+
+# При self-steal SNI и есть реальный адрес сервера (один и тот же домен).
+# При классическом Reality (чужой SNI-донор) клиент обязан подключаться к
+# АДРЕСУ СЕРВЕРА, а не к домену-донору — donor.com:port ведёт на настоящий
+# donor.com, а не на вашу ноду. Без --address здесь легко ошибиться, как уже
+# один раз случилось при ручной сборке транзитного конфига по выводу этого
+# скрипта: подставили SNI вместо реального адреса ноды.
+if [[ -z "$ADDRESS" ]]; then
+  if [[ $SELFSTEAL -eq 1 ]]; then
+    ADDRESS="$SNI"
+  else
+    die "Для не-self-steal ноды укажите --address <реальный домен/IP этого сервера> (SNI здесь - чужой донор, не адрес для подключения)"
+  fi
+fi
 
 # ── Поиск xray ─────────────────────────────────────────────────────────────
 XRAY=""
@@ -78,6 +93,7 @@ cat <<EOF
   shortIds    : ${SIDS[*]}
   XHTTP path  : $XPATH
   SNI         : $SNI
+  address     : $ADDRESS$([[ "$ADDRESS" == "$SNI" ]] || echo '   (реальный адрес сервера - НЕ донор)')
   dest        : $DEST   ($DEST_NOTE)
   port        : $PORT$([[ "$PORT" != "443" ]] && echo '   (нестандартный — сверьте с xray-transit-outbound.json и firewall)')
 
@@ -122,7 +138,7 @@ cat <<EOF
   "protocol": "vless",
   "settings": {
     "vnext": [{
-      "address": "$SNI",
+      "address": "$ADDRESS",
       "port": $PORT,
       "users": [{ "id": "$UUID", "encryption": "none" }]
     }]
@@ -154,7 +170,7 @@ cat <<EOF
 ────────────────────────────────────────────────────────────────
   ССЫЛКА (для мобильных клиентов)
 ────────────────────────────────────────────────────────────────
-vless://$UUID@$SNI:$PORT?type=xhttp&security=reality&sni=$SNI&fp=firefox&pbk=$PUBLIC_KEY&sid=${SIDS[0]}&path=$(printf '%s' "$XPATH" | sed 's|/|%2F|g')&mode=auto#${NAME^^}
+vless://$UUID@$ADDRESS:$PORT?type=xhttp&security=reality&sni=$SNI&fp=firefox&pbk=$PUBLIC_KEY&sid=${SIDS[0]}&path=$(printf '%s' "$XPATH" | sed 's|/|%2F|g')&mode=auto#${NAME^^}
 
 ════════════════════════════════════════════════════════════════
   Не забудьте:

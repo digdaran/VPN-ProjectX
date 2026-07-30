@@ -24,7 +24,10 @@ for f in "${FILES[@]}"; do
   # 1. Валидный JSON
   # encoding='utf-8' обязателен: на Windows open() иначе берёт системную
   # кодировку (cp1251 и т.п.), а в _comment встречается кириллица.
-  if python3 -c "import json;json.load(open('$f', encoding='utf-8'))" 2>/dev/null; then
+  # Путь передаётся через argv, а не интерполяцией в исходник python -c:
+  # обратные слэши абсолютного Windows-пути внутри '-c' иначе трактуются
+  # как escape-последовательности и валят проверку на ровном месте.
+  if python3 -c "import json,sys;json.load(open(sys.argv[1], encoding='utf-8'))" "$f" 2>/dev/null; then
     ok "валидный JSON"
   else
     bad "невалидный JSON"; continue
