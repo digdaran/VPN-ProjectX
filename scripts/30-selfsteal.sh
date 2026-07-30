@@ -150,6 +150,10 @@ server {
 }
 EOF
 rm -f /etc/nginx/sites-enabled/default
+# На случай повторного запуска после сбоя на предыдущей попытке: битый
+# sites-enabled/selfsteal с прошлого раза иначе валит проверку уже здесь,
+# до того как ниже дойдёт очередь его перезаписать.
+rm -f /etc/nginx/sites-enabled/selfsteal
 ln -sf /etc/nginx/sites-available/selfsteal-acme /etc/nginx/sites-enabled/selfsteal-acme
 nginx -t || die "Временный конфиг nginx невалиден"
 systemctl start nginx
@@ -167,8 +171,11 @@ rm -f /etc/nginx/sites-enabled/selfsteal-acme
 
 cat > /etc/nginx/sites-available/selfsteal <<EOF
 server {
-    listen 127.0.0.1:8443 ssl;
-    http2 on;
+    # http2 через параметр listen (не отдельная директива "http2 on;") —
+    # так работает и на старом nginx 1.18 из репозитория Ubuntu/Debian,
+    # и на новом. Отдельная директива появилась только в nginx 1.25.1+
+    # и ломает конфиг на всём, что старше.
+    listen 127.0.0.1:8443 ssl http2;
     server_name $DOMAIN;
 
     ssl_certificate         /etc/letsencrypt/live/$DOMAIN/fullchain.pem;

@@ -165,6 +165,16 @@ if [[ $NO_FW_RESET -eq 1 ]]; then
   warn "На сервере уже что-то работает (например x-ui) — ниже только ДОБАВЛЯЮТСЯ нужные правила поверх текущих."
   if ! ufw status | grep -q '^Status: active'; then
     warn "ufw сейчас неактивен. Проверьте вручную перед включением: ufw status verbose, iptables -L -n."
+    # Известный рассинхрон: /etc/ufw/ufw.conf хранит ENABLED=yes с прошлого
+    # раза (кто-то когда-то включал ufw), но цепочки в ядре сейчас не
+    # загружены (ufw status = inactive) — например после отката/пересоздания
+    # сервера. При таком расхождении ufw пытается прочистить несуществующую
+    # цепочку и падает с "ERROR: problem running" на любом `ufw allow`.
+    # Приводим флаг в соответствие с реальным состоянием.
+    if grep -q '^ENABLED=yes' /etc/ufw/ufw.conf 2>/dev/null; then
+      warn "Обнаружен рассинхрон: /etc/ufw/ufw.conf says ENABLED=yes, но ufw неактивен. Исправляю на ENABLED=no, иначе следующие 'ufw allow' упадут."
+      sed -i 's/^ENABLED=yes/ENABLED=no/' /etc/ufw/ufw.conf
+    fi
   fi
 else
   ufw --force reset >/dev/null
@@ -211,7 +221,20 @@ ufw deny out 25/tcp  comment 'no outbound SMTP'
 ufw deny out 465/tcp comment 'no outbound SMTP'
 ufw deny out 587/tcp comment 'no outbound SMTP'
 
-ufw --force enable
+if [[ $NO_FW_RESET -eq 1 ]]; then
+  if ufw status | grep -q '^Status: active'; then
+    log "ufw уже был активен — оставляю включённым (правила выше уже добавлены)"
+  else
+    warn "ufw НЕ включаю. В режиме сосуществования это означает: если на сервере"
+    warn "уже работает что-то с портами, которые вы явно не добавили в allow-правила"
+    warn "выше (x-ui и т.п.), включение ufw именно сейчас оборвало бы им доступ."
+    warn "Правила подготовлены (allow SSH/панель/транзит, deny out SMTP), но"
+    warn "неактивны, пока вы не добавите allow под остальные порты своих сервисов"
+    warn "и не включите вручную: ufw enable"
+  fi
+else
+  ufw --force enable
+fi
 ufw status verbose
 
 # ── Лимит одновременных подключений с одного IP ────────────────────────────
@@ -281,7 +304,7 @@ cat <<EOF
   Подготовка завершена. Роль: $ROLE
 ════════════════════════════════════════════════════════════════
   SSH порт        : $SSH_PORT  (только по ключу)
-  Firewall        : ufw активен$([[ $NO_FW_RESET -eq 1 ]] && echo ' (режим сосуществования: default-policy не менялась)')
+  Firewall        : $(ufw status | grep -q '^Status: active' && echo 'ufw активен' || echo 'ufw НЕ включён (правила подготовлены, см. предупреждения выше)')
   Транзитный порт : $TRANSIT_PORT
   Congestion ctrl : $(sysctl -n net.ipv4.tcp_congestion_control)
   Docker          : $(docker --version 2>/dev/null || echo 'не установлен')

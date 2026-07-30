@@ -53,6 +53,14 @@ done
 
 [[ -f "$INVENTORY" ]] || die "Не найден инвентарь: $INVENTORY (шаблон — scripts/deploy.conf.example)"
 
+# Незаменённые плейсхолдеры (PASTE_*) — та же идея, что в 50-preflight.sh:
+# незачем молча слать "--email PASTE_EMAIL" на реальный сервер.
+if [[ $DRY_RUN -eq 0 ]] && grep -qE 'PASTE_[A-Z_]+' "$INVENTORY"; then
+  bad "В $INVENTORY остались незаменённые плейсхолдеры:"
+  grep -noE '[A-Za-z_]+=PASTE_[A-Z_]+' "$INVENTORY" | sed 's/^/    /'
+  die "Заполните их (или запустите с --dry-run, чтобы просто посмотреть план)"
+fi
+
 # extra "k1=v1;k2=v2" -> значение по ключу, или дефолт вторым аргументом.
 extra_get() {
   local extra="$1" key="$2" default="${3:-}" pair
@@ -75,8 +83,9 @@ remote_run() {
     echo "    [dry-run] ssh -p $port $user@$host 'sudo bash -s' -- ${args[*]:-} < $(basename "$script")"
     return 0
   fi
-  ssh -p "$port" -o StrictHostKeyChecking=accept-new "$user@$host" \
-      "sudo bash -s" -- "${args[@]}" < "$script"
+  ssh -p "$port" -o StrictHostKeyChecking=accept-new \
+      -o ServerAliveInterval=15 -o ServerAliveCountMax=8 \
+      "$user@$host" "sudo bash -s" -- "${args[@]}" < "$script"
 }
 
 deploy_panel() {

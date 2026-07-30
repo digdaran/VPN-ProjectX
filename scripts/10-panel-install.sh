@@ -73,6 +73,13 @@ METRICS_PORT=3001
 JWT_AUTH_SECRET=$JWT_AUTH
 JWT_API_TOKENS_SECRET=$JWT_API
 
+### REDIS ###############################################
+# Обязателен для remnawave/backend — без него контейнер падает в рестарт-луп
+# с ошибкой "REDIS_HOST: Either REDIS_SOCKET or both REDIS_HOST and REDIS_PORT
+# must be provided".
+REDIS_HOST=remnawave-redis
+REDIS_PORT=6379
+
 ### ДОМЕНЫ #############################################
 FRONT_END_DOMAIN=$DOMAIN
 SUB_PUBLIC_DOMAIN=$SUB_DOMAIN
@@ -121,6 +128,18 @@ services:
       timeout: 10s
       retries: 3
 
+  remnawave-redis:
+    image: redis:7-alpine
+    container_name: remnawave-redis
+    hostname: remnawave-redis
+    restart: always
+    networks: [remnawave-network]
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 3s
+      timeout: 5s
+      retries: 5
+
   remnawave:
     image: remnawave/backend:latest
     container_name: remnawave
@@ -132,6 +151,8 @@ services:
     networks: [remnawave-network]
     depends_on:
       remnawave-db:
+        condition: service_healthy
+      remnawave-redis:
         condition: service_healthy
 
   remnawave-subscription-page:
