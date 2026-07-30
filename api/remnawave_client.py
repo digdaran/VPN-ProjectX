@@ -275,7 +275,7 @@ class Nodes(_Section):
         nodes = await self.list()
         connected = [n for n in nodes if n.get("isConnected")]
         down = [n for n in nodes if not n.get("isConnected") and not n.get("isDisabled")]
-        versions = {n.get("xrayVersion") for n in connected if n.get("xrayVersion")}
+        versions = {n.get("versions", {}).get("xray") for n in connected if n.get("versions", {}).get("xray")}
         return {
             "total": len(nodes),
             "connected": len(connected),

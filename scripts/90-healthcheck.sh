@@ -100,7 +100,7 @@ if [[ -n "${PANEL_URL:-}" && -n "${PANEL_TOKEN:-}" ]]; then
   RESP="$(curl -sS --max-time 15 -H "Authorization: Bearer $PANEL_TOKEN" "$PANEL_URL/api/nodes" 2>/dev/null || true)"
   if echo "$RESP" | jq -e '.response' >/dev/null 2>&1; then
     ok "API панели отвечает"
-    echo "$RESP" | jq -r '.response[] | "\(.name)\t\(.isConnected)\t\(.isDisabled)\t\(.xrayVersion // "?")"' 2>/dev/null |
+    echo "$RESP" | jq -r '.response[] | "\(.name)\t\(.isConnected)\t\(.isDisabled)\t\(.versions.xray // "?")"' 2>/dev/null |
     while IFS=$'\t' read -r name conn disabled ver; do
       if [[ "$disabled" == "true" ]]; then
         printf '  \033[1;33m!\033[0m нода %s — отключена вручную\n' "$name"
@@ -112,8 +112,8 @@ if [[ -n "${PANEL_URL:-}" && -n "${PANEL_TOKEN:-}" ]]; then
     done
 
     # Версии Xray должны совпадать на всех нодах: рассинхрон ломает XHTTP
-    VERS="$(echo "$RESP" | jq -r '[.response[] | select(.isConnected==true) | .xrayVersion] | unique | join(", ")' 2>/dev/null)"
-    NVER="$(echo "$RESP" | jq -r '[.response[] | select(.isConnected==true) | .xrayVersion] | unique | length' 2>/dev/null)"
+    VERS="$(echo "$RESP" | jq -r '[.response[] | select(.isConnected==true) | .versions.xray] | unique | join(", ")' 2>/dev/null)"
+    NVER="$(echo "$RESP" | jq -r '[.response[] | select(.isConnected==true) | .versions.xray] | unique | length' 2>/dev/null)"
     if [[ "${NVER:-0}" -gt 1 ]]; then
       bad "РАЗНЫЕ версии Xray на нодах: $VERS. XHTTP в активной разработке — рассинхрон даёт молчаливые сбои."
     elif [[ "${NVER:-0}" -eq 1 ]]; then
