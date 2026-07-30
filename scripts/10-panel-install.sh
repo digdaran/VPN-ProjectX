@@ -35,7 +35,14 @@ done
 [[ $EUID -eq 0 ]] || die "Запускайте от root"
 [[ -n "$DOMAIN" ]] || die "Укажите --domain"
 [[ -n "$EMAIL"  ]] || die "Укажите --email"
-SUB_DOMAIN="${SUB_DOMAIN:-$DOMAIN}"
+# --sub-domain ОБЯЗАН быть отдельным доменом, не тем же самым, что --domain.
+# Раньше здесь был тихий фоллбэк SUB_DOMAIN=DOMAIN — на практике именно это
+# приводило к двум server{} с одинаковым server_name на одном порту (nginx
+# молча использует только первый, "conflicting server name ... ignored" в
+# логах), из-за чего страница подписки не работала как задумано, а клиенты
+# получали HTML вместо самой подписки.
+[[ -n "$SUB_DOMAIN" ]] || die "Укажите --sub-domain — обязан быть ОТДЕЛЬНЫМ доменом (не тем же, что --domain), иначе панель и страница подписки конфликтуют на одном server_name"
+[[ "$SUB_DOMAIN" != "$DOMAIN" ]] || die "--sub-domain не должен совпадать с --domain"
 command -v docker >/dev/null || die "Docker не установлен. Сначала прогоните 00-hardening.sh"
 
 log "Проверка DNS"
@@ -162,6 +169,12 @@ services:
     restart: always
     environment:
       - REMNAWAVE_PANEL_URL=http://remnawave:3000
+      # Обязателен, иначе контейнер падает в рестарт-луп с ошибкой
+      # "REMNAWAVE_API_TOKEN: ... Create a new API Token". Создаётся ПОСЛЕ
+      # первого входа в панель: Settings → API Tokens → Create. Токен нельзя
+      # сгенерировать на этапе установки — панели/суперадмина ещё не
+      # существует, это обязательный ручной шаг постфактум.
+      - REMNAWAVE_API_TOKEN=PASTE_API_TOKEN_FROM_PANEL_HERE
       - APP_PORT=3010
     ports:
       - '127.0.0.1:3010:3010'
@@ -323,6 +336,14 @@ cat <<EOF
   ⚠️  СЕЙЧАС ЖЕ откройте https://$DOMAIN и создайте суперадмина.
       Регистрация открыта до создания первого администратора —
       каждая минута промедления это открытая дверь.
+
+  ⚠️  Страница подписки (https://$SUB_DOMAIN) СЕЙЧАС НЕ РАБОТАЕТ — контейнер
+      remnawave-subscription-page падает в рестарт-луп без API-токена.
+      Обязательно после создания суперадмина:
+        1. В панели: Settings → API Tokens → Create.
+        2. Вставьте токен вместо PASTE_API_TOKEN_FROM_PANEL_HERE
+           в $DIR/docker-compose.yml.
+        3. cd $DIR && docker compose up -d
 
   Затем:
    1. Ограничьте доступ к панели: раскомментируйте allow/deny
