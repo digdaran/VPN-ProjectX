@@ -221,9 +221,12 @@ chmod +x /usr/local/bin/update-xray-assets.sh
   echo "31 3 * * 1 /usr/local/bin/update-xray-assets.sh >> /var/log/xray-assets.log 2>&1" ) | crontab -
 ```
 
-**SECRET_KEY** берётся только из панели, отдельного поля под него в UI нет:
-Nodes → создайте/выберите ноду → **«Copy docker-compose.yml»** → возьмите
-оттуда только значение `SECRET_KEY`, вставьте в `.env` вместо плейсхолдера.
+**SECRET_KEY** проще всего взять из панели: Nodes → создайте/выберите ноду →
+**«Copy docker-compose.yml»** → возьмите оттуда только значение
+`SECRET_KEY`, вставьте в `.env` вместо плейсхолдера. Значение общее на всю
+панель (не привязано к конкретной ноде) — при развёртывании через API, а не
+руками через UI, тот же секрет отдаёт авторизованный `GET /api/keygen`
+(поле `response.secretKey`), см. `scripts/20-node-install.sh`.
 
 ```bash
 cd /opt/remnanode && docker compose up -d
