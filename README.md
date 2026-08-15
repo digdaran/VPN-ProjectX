@@ -25,6 +25,7 @@
 - [`docs/panel-comparison.md`](docs/panel-comparison.md) — альтернативный путь: 3x-ui вместо Remnawave
 - [`docs/api-automation.md`](docs/api-automation.md) — API, вебхуки, свой оркестратор
 - [`docs/multi-entry.md`](docs/multi-entry.md) — прямые подключения ко всем нодам, механизм `tcp 16-20`
+- [`docs/client-templates.md`](docs/client-templates.md) — разный формат подписки под разных клиентов (INCY, Clash/Mihomo) через Templates/Response Rules Remnawave
 - [`ARCHITECTURE.md`](ARCHITECTURE.md) — техническая архитектура: узлы, протокольный стек, порты, конвейер развёртывания
 - [`DECISIONS.md`](DECISIONS.md) — журнал решений (ADR): почему именно так, а не иначе, и при каких условиях пересматривать
 - [`CLAUDE.md`](CLAUDE.md) — для тех, кто вносит правки при помощи AI-ассистента: инварианты репозитория и что нельзя ломать молча
@@ -41,6 +42,7 @@ docs/
   panel-comparison.md            альтернативный путь: 3x-ui вместо Remnawave
   api-automation.md              сценарии автоматизации
   multi-entry.md                 прямые входы на все ноды, tcp 16-20
+  client-templates.md            формат подписки под разных клиентов (Templates/Response Rules)
 configs/
   xray-ru-entry.json             inbound RU-ноды, с комментариями
   xray-transit-outbound.json     транзит + маршрутизация, с комментариями
@@ -48,6 +50,8 @@ configs/
   xray-exit-node-public.json     то же + публичные входы для прямых клиентов
   client-example.json            клиентский профиль + шаблон vless://
   client-multi-profile.json      мультивход с приоритетами RU → KZ → EU
+  client-mihomo-ru.yaml          форк шаблона Mihomo/Clash/Stash для Remnawave Templates
+  client-singbox-ru.json         форк шаблона sing-box для Remnawave Templates
   nginx-selfsteal.conf           сайт-донор для self-steal
   ready/                         те же конфиги без комментариев — вставлять как есть
     ru-entry-full.json           entry + transit, собраны в один файл
@@ -143,6 +147,11 @@ api/
 и потребуется собственный оркестратор поверх его API; заготовка — в
 `api/xui_orchestrator.py`, подробности использования — в
 [`docs/panel-comparison.md`](docs/panel-comparison.md).
+
+Подписка может отдавать разный формат разным клиентам (обычный Xray JSON для
+INCY и подобных, отдельный YAML для Clash/Mihomo) — это встроенная функция
+Remnawave (Templates + Response Rules), не то, что нужно писать самим.
+Подробности и готовый Mihomo-шаблон — [`docs/client-templates.md`](docs/client-templates.md).
 
 ---
 

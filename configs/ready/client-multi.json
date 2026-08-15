@@ -5,12 +5,6 @@
   "dns": {
     "servers": [
       {
-        "address": "https://dns.google/dns-query",
-        "domains": [
-          "geosite:geolocation-!ru"
-        ]
-      },
-      {
         "address": "77.88.8.8",
         "domains": [
           "geosite:category-ru"
@@ -18,6 +12,9 @@
         "expectIPs": [
           "geoip:ru"
         ]
+      },
+      {
+        "address": "https://dns.google/dns-query"
       },
       "localhost"
     ],
@@ -335,6 +332,27 @@
         "type": "field",
         "ip": [
           "geoip:ru"
+        ],
+        "outboundTag": "direct"
+      },
+      {
+        "type": "field",
+        "domain": [
+          "geosite:microsoft",
+          "geosite:apple",
+          "geosite:twitch",
+          "geosite:pinterest"
+        ],
+        "outboundTag": "direct"
+      },
+      {
+        "type": "field",
+        "domain": [
+          "geosite:steam",
+          "geosite:epicgames",
+          "geosite:origin",
+          "geosite:ea",
+          "geosite:riot"
         ],
         "outboundTag": "direct"
       },

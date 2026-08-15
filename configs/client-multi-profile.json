@@ -4,9 +4,10 @@
   "log": { "loglevel": "warning" },
 
   "dns": {
+    "_comment": "ИСПРАВЛЕНО 2026-08-15: было geosite:geolocation-!ru у google-записи - калька с типового китайского geolocation-!cn (та категория реально есть в geosite.dat), но geolocation-!ru никто не собирает ни в одной сборке geosite.dat, включая Loyalsoldier/v2ray-rules-dat, которую качает scripts/20-node-install.sh. С такой категорией xray падает на старте ЦЕЛИКОМ - 'code not found in geosite.dat: GEOLOCATION-!RU', ещё до routing-правил. Проверено напрямую: xray run -test -c client-multi.json. Порядок теперь важен: RU-резолвер (с ограничением по category-ru) должен идти ПЕРЕД безусловным google, иначе google перехватит все запросы и RU-домены будут резолвиться не через Яндекс.",
     "servers": [
-      { "address": "https://dns.google/dns-query", "domains": ["geosite:geolocation-!ru"] },
       { "address": "77.88.8.8", "domains": ["geosite:category-ru"], "expectIPs": ["geoip:ru"] },
+      { "address": "https://dns.google/dns-query" },
       "localhost"
     ],
     "queryStrategy": "UseIPv4"
@@ -238,6 +239,7 @@
   ],
 
   "routing": {
+    "_comment_telegram": "Telegram сознательно НЕ переведён в direct, хотя в РФ не заблокирован. DIRECT снял бы нагрузку с gates, но делает телеграм-трафик видимым для DPI как телеграм-трафик, а не шумом внутри Reality-тоннеля - тот же компромисс, что описан в configs/client-mihomo-ru.yaml и configs/client-hardened-routing.json. Остаётся в общем правиле ниже (через балансировщик).",
     "domainStrategy": "IPIfNonMatch",
     "rules": [
       { "type": "field", "ip": ["geoip:private"], "outboundTag": "direct" },
@@ -249,6 +251,18 @@
         "outboundTag": "direct"
       },
       { "type": "field", "ip": ["geoip:ru"], "outboundTag": "direct" },
+      {
+        "_comment": "Из готового Mihomo-профиля configs/client-mihomo-ru.yaml (RoscomVPN) - у них те же категории идут DIRECT. Не заблокированы в РФ, тянуть через балансировщик незачем - экономит полосу и снимает нагрузку с gates.",
+        "type": "field",
+        "domain": ["geosite:microsoft", "geosite:apple", "geosite:twitch", "geosite:pinterest"],
+        "outboundTag": "direct"
+      },
+      {
+        "_comment": "Игровые платформы - DIRECT по умолчанию, как в апстримном Mihomo-шаблоне (там это тоже дефолт, переключаемый). НЕ полевая проверка нашего проекта, а унаследованное с апстрима допущение - если конкретный сервис на deelaх окажется недоступен без тоннеля, уберите его домен отсюда. escapefromtarkov/faceit из Mihomo-шаблона сюда НЕ перенесены: таких geosite-категорий нет во вшитой в Xray-core базе v2fly/domain-list-community (проверено 2026-08-15) - добавление несуществующего geosite-тега уронит загрузку конфига целиком.",
+        "type": "field",
+        "domain": ["geosite:steam", "geosite:epicgames", "geosite:origin", "geosite:ea", "geosite:riot"],
+        "outboundTag": "direct"
+      },
       {
         "_comment": "Весь остальной трафик - в балансировщик с приоритетным перебором",
         "type": "field",
