@@ -312,3 +312,87 @@ Sing-box) отдают контент правильного размера по
 Тестовый `X-HWID`, зарегистрированный при проверке (2), удалён через
 `POST /api/hwid/devices/delete` сразу после — `GET /api/hwid/devices/{id}`
 подтверждает `total: 0`.
+
+---
+
+## Найден и исправлен: битый Happ/INCY routing-профиль (2026-08-16)
+
+Реальный пользователь (клиент **INCY**) прислал скриншот ошибки при попытке
+подключиться: `infra/conf: invalid field rule > common/geodata: illegal
+domain rule: geosite:torrent > ... EOF`. Это тот же класс бага, что чинили
+выше в Xray-JSON профилях (несуществующий geosite-тег роняет загрузку
+конфига целиком) — но на этот раз не в файлах этого репозитория, а прямо в
+живой настройке панели.
+
+### Где нашлось
+
+`subscription-settings.customResponseHeaders.routing` — отдельное поле,
+никак не связанное с Templates/Response Rules выше. Это URI вида
+`happ://routing/add/<base64 JSON>`, который Remnawave отдаёт клиентам как
+кастомный HTTP-заголовок; **INCY, как и Happ, умеет его читать и строить из
+него локальный routing-профиль** (это конвенция, не документированная в
+самой панели — обнаружена по факту, что INCY на неё падает). Внутри —
+свой формат (`DirectSites`/`ProxySites`/`BlockSites`/`DirectIp`/`ProxyIp`/
+`BlockIp`, поля `Geoipurl`/`Geositeurl` явно указывают на тот же
+`Loyalsoldier/v2ray-rules-dat`, что качает `scripts/20-node-install.sh`) —
+но категории в нём набраны из того же RoscomVPN-набора, что и в
+`client-mihomo-ru.yaml`, без проверки, что каждый тег реально существует в
+этой geosite.dat.
+
+### Что было сломано (проверено поштучно, не на глаз)
+
+Прямые запросы к `raw.githubusercontent.com/v2fly/domain-list-community/master/data/<tag>`
+для каждого использованного тега:
+
+| Массив | Битые теги | Существуют |
+|---|---|---|
+| `DirectSites` | `whitelist`, `escapefromtarkov`, `faceit`, **`ru`** (без `category-`) | `private`, `category-ru`, `microsoft`, `apple`, `epicgames`, `riot`, `steam`, `origin`, `twitch`, `pinterest` |
+| `ProxySites` | `twitch-ads` | `google-play`, `github`, `youtube`, `telegram` |
+| `BlockSites` | `win-spy`, `torrent` | `category-ads` |
+| `DirectIp` | `direct` (в geoip.dat есть `RU`/`CN`/`PRIVATE`, но не `DIRECT`) | `private`, `ru` |
+
+Итого **8 битых тегов** из 24 использованных — треть профиля была
+нерабочей. Любой строгий Xray-based клиент (INCY попался первым, но это
+общее свойство ядра, не особенность конкретного приложения) падает на
+первом же нерабочем теге при попытке применить этот routing-профиль —
+`geosite:ru` не первый в списке, поэтому реальная ошибка у пользователя
+была именно про `torrent`, но `ru` тоже была бы проблемой, дойди до неё
+разбор.
+
+### Фикс
+
+Все 8 тегов убраны из `happ://routing/add/...`, остальные (валидные)
+оставлены как есть. `customResponseHeaders` обновлён через
+`PATCH /api/subscription-settings` (тело — весь объект `customResponseHeaders`,
+не только `routing`, чтобы не затереть `support-url`/`profile-title`/
+`profile-web-page-url`/`profile-update-interval` — судя по всему, PATCH
+здесь заменяет объект целиком, а не мёржит по ключам). Результат проверен
+трижды:
+
+1. Round-trip `GET` — остальные 4 ключа `customResponseHeaders` не задеты.
+2. Декодированный `routing` вручную сверен — ни одного из 8 битых тегов не
+   осталось, валидные на месте.
+3. **Решающая проверка**: итоговые `DirectSites`/`ProxySites`/`BlockSites`/
+   `DirectIp`/`ProxyIp`/`BlockIp` собраны в настоящий Xray routing-конфиг и
+   прогнаны через `xray run -test` (XTLS/Xray-core v26.3.27, та же сборка,
+   что и весь остальной сегодняшний прогон) — `Configuration OK.`
+
+### Урок на будущее
+
+Это уже третий раз за сегодня (после `geolocation-!ru` в клиентских
+Xray-JSON профилях и `escapefromtarkov`/`faceit` в переносе категорий из
+Mihomo-шаблона), когда geosite-тег из курируемого RoscomVPN-набора
+оказывается несуществующим в стандартной geosite.dat. Список надёжно
+существующих категорий, использованных в этом проекте и проверенных
+поштучно на 2026-08-15/16: `private`, `category-ru`, `category-gov-ru`,
+`category-ads`/`category-ads-all`, `microsoft`, `apple`, `epicgames`,
+`riot`, `steam`, `origin`, `ea`, `twitch`, `pinterest`, `google-play`,
+`github`, `youtube`, `telegram`, `whatsapp`. Ненадёжны (не существуют в
+`v2fly/domain-list-community`, и, соответственно, в собранной из неё
+`Loyalsoldier/v2ray-rules-dat`): `geolocation-!ru`, `escapefromtarkov`,
+`faceit`, `whitelist`, `twitch-ads`, `win-spy`, `torrent`, голый `ru` (без
+`category-`), `geoip:direct`. Перед тем как добавлять **любой** новый
+geosite/geoip тег куда бы то ни было в этом проекте — проверять его
+существование тем же способом (прямой HTTP-запрос к `data/<tag>` в
+`v2fly/domain-list-community`), а не полагаться на то, что он есть в
+чьём-то чужом Mihomo/Clash-шаблоне.
