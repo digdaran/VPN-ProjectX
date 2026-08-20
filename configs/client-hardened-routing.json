@@ -1,0 +1,137 @@
+{
+  "_comment": "ЧЕРНОВИК. Не подключён ни к одному скрипту деплоя и не заменяет configs/client-example.json — это вариант с двумя доп. правилами маршрутизации, добытыми при разборе пробной подписки стороннего RU-VPN сервиса (vk-proxy.com, конкурентный анализ 2026-08-15). Прежде чем сливать в client-example.json/client-multi-profile.json — решить осознанно про QUIC-правило (работает только в TUN-режиме) и про мессенджеры (по умолчанию НЕ включено, см. _comment_messengers).",
+
+  "log": { "loglevel": "warning" },
+
+  "dns": {
+    "_comment": "У конкурента отдельный dns-block-резолвер (rcode://success) для рекламных доменов — но это то же самое, что у нас уже даёт routing-правило domain:category-ads-all -> block ниже. Дублировать на уровне DNS незачем.",
+    "_comment_fix": "ИСПРАВЛЕНО 2026-08-15: было geosite:geolocation-!ru у google-записи - унаследовано из client-example.json при создании черновика, там же и найдено. Такой категории нет ни в одной сборке geosite.dat - xray падает на старте целиком. Проверено: xray run -test. Подробности - в configs/client-example.json.",
+    "servers": [
+      { "address": "77.88.8.8", "domains": ["geosite:category-ru"], "expectIPs": ["geoip:ru"] },
+      { "address": "https://dns.google/dns-query" },
+      "localhost"
+    ],
+    "queryStrategy": "UseIPv4"
+  },
+
+  "inbounds": [
+    {
+      "tag": "socks-in",
+      "listen": "127.0.0.1",
+      "port": 10808,
+      "protocol": "socks",
+      "settings": { "udp": true, "auth": "noauth" },
+      "sniffing": { "enabled": true, "destOverride": ["http", "tls", "quic"], "routeOnly": false }
+    },
+    {
+      "tag": "http-in",
+      "listen": "127.0.0.1",
+      "port": 10809,
+      "protocol": "http",
+      "sniffing": { "enabled": true, "destOverride": ["http", "tls", "quic"] }
+    }
+  ],
+
+  "outbounds": [
+    {
+      "tag": "proxy",
+      "protocol": "vless",
+      "settings": {
+        "vnext": [
+          {
+            "address": "vpn.example.ru",
+            "port": 443,
+            "users": [
+              {
+                "id": "00000000-0000-0000-0000-000000000000",
+                "encryption": "none",
+                "level": 0
+              }
+            ]
+          }
+        ]
+      },
+      "streamSettings": {
+        "network": "xhttp",
+        "security": "reality",
+        "realitySettings": {
+          "serverName": "vpn.example.ru",
+          "fingerprint": "firefox",
+          "publicKey": "PUBLIC_KEY_FROM_SERVER",
+          "shortId": "0123456789abcdef",
+          "spiderX": "/"
+        },
+        "xhttpSettings": {
+          "host": "vpn.example.ru",
+          "path": "/assets/media/stream",
+          "mode": "auto",
+          "extra": {
+            "xPaddingBytes": "100-1000",
+            "xmux": {
+              "maxConnections": "2-3",
+              "maxConcurrency": 0,
+              "cMaxReuseTimes": "64-128",
+              "hMaxRequestTimes": "800-900",
+              "hMaxReusableSecs": "1800-3000",
+              "hKeepAlivePeriod": 0
+            }
+          }
+        },
+        "sockopt": { "tcpFastOpen": true }
+      }
+    },
+
+    { "tag": "direct", "protocol": "freedom", "settings": { "domainStrategy": "UseIPv4" } },
+    { "tag": "block", "protocol": "blackhole", "settings": { "response": { "type": "http" } } }
+  ],
+
+  "routing": {
+    "_comment_messengers_disabled": "ОПЦИЯ, ВЫКЛЮЧЕНА ПО УМОЛЧАНИЮ, В rules НИЖЕ НЕ ВКЛЮЧЕНА. У vk-proxy.com WhatsApp/Telegram идут DIRECT — экономит полосу тоннеля. Не включать не глядя: WhatsApp в РФ заблокирован Роскомнадзором на дату этого черновика (2026-08-15) — DIRECT для него значит 'не работает', а не 'быстрее'. Telegram не заблокирован, DIRECT для него технически рабочий вариант, но это осознанный компромисс: ваш телеграм-трафик становится виден DPI как телеграм-трафик, а не как неотличимый шум внутри Reality-тоннеля. Если решите включить — вставьте правило { \"domain\": [\"geosite:telegram\"], \"outboundTag\": \"direct\" } в rules строго после блока geoip:ru и обязательно ДО QUIC-блока ниже.",
+    "domainStrategy": "IPIfNonMatch",
+    "rules": [
+      { "type": "field", "ip": ["geoip:private"], "outboundTag": "direct" },
+      { "type": "field", "domain": ["geosite:category-ads-all"], "outboundTag": "block" },
+      {
+        "_comment": "Российские сервисы идут мимо туннеля — быстрее и не ломает банк-клиенты",
+        "type": "field",
+        "domain": ["geosite:category-ru", "geosite:category-gov-ru"],
+        "outboundTag": "direct"
+      },
+      { "type": "field", "ip": ["geoip:ru"], "outboundTag": "direct" },
+      {
+        "_comment": "Из готового Mihomo-профиля configs/client-mihomo-ru.yaml (RoscomVPN) — у них те же категории идут DIRECT: не заблокированы в РФ, тянуть через тоннель незачем.",
+        "type": "field",
+        "domain": ["geosite:microsoft", "geosite:apple", "geosite:twitch", "geosite:pinterest"],
+        "outboundTag": "direct"
+      },
+      {
+        "_comment": "Игровые платформы — DIRECT по умолчанию, как в апстримном Mihomo-шаблоне (там тоже дефолт, переключаемый). Унаследованное с апстрима допущение, не наша полевая проверка — если конкретный сервис на деле недоступен без тоннеля, уберите его домен отсюда. escapefromtarkov/faceit из Mihomo-шаблона сюда НЕ перенесены: таких geosite-категорий нет во вшитой в Xray-core базе v2fly/domain-list-community (проверено 2026-08-15) — несуществующий geosite-тег уронит загрузку конфига целиком.",
+        "type": "field",
+        "domain": ["geosite:steam", "geosite:epicgames", "geosite:origin", "geosite:ea", "geosite:riot"],
+        "outboundTag": "direct"
+      },
+      {
+        "_comment": "ЧЕРНОВИК, из анализа vk-proxy.com. Их профиль рвёт прямой UDP:443 (QUIC) правилом REJECT-DROP, оставляя только TCP/TLS через прокси. Работает ТОЛЬКО когда клиент в TUN-режиме (Hiddify/NekoRay tun2socks и подобные) — тогда весь системный трафик, включая QUIC, реально проходит через этот routing, и правило форсирует TCP-фолбэк вместо утечки прямого QUIC мимо тоннеля или зависания на непроксируемом UDP. При обычном SOCKS/HTTP-инбаунде (как в этом файле) большинство приложений само решает, слать ли UDP в прокси, и часто просто не шлёт — правило тогда почти бесполезно, но и не вредит. Держать закомментированным, пока профиль не выдаётся через TUN-клиент; включить, если у вас именно такой сценарий.",
+        "type": "field",
+        "network": "udp",
+        "port": "443",
+        "outboundTag": "block"
+      },
+      { "type": "field", "network": "tcp,udp", "outboundTag": "proxy" }
+    ]
+  },
+
+  "_uri_template": {
+    "_comment": "Тот же профиль в виде ссылки для мобильных клиентов. Подставьте свои значения и URL-кодируйте path.",
+    "uri": "vless://UUID@vpn.example.ru:443?type=xhttp&security=reality&sni=vpn.example.ru&fp=firefox&pbk=PUBLIC_KEY&sid=SHORT_ID&path=%2Fassets%2Fmedia%2Fstream&mode=auto&extra=%7B%22xmux%22%3A%7B%22maxConnections%22%3A%222-3%22%2C%22maxConcurrency%22%3A0%7D%2C%22xPaddingBytes%22%3A%22100-1000%22%7D#RU-Gate-DE"
+  },
+
+  "_recommended_clients": {
+    "android": "Happ, v2rayNG (свежие сборки с поддержкой XHTTP extra)",
+    "ios": "Happ, Streisand, V2Box",
+    "windows": "Hiddify, NekoRay, v2rayN",
+    "macos": "Happ, Hiddify, V2Box",
+    "linux": "Xray-core напрямую, NekoRay",
+    "_note": "QUIC-правило в этом черновике имеет смысл только для клиентов с TUN-режимом (Hiddify, NekoRay в режиме tun2socks). Для чистого SOCKS/HTTP-проксирования (v2rayN, голый Xray-core) оно почти ничего не меняет."
+  }
+}

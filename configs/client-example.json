@@ -4,9 +4,10 @@
   "log": { "loglevel": "warning" },
 
   "dns": {
+    "_comment": "ИСПРАВЛЕНО 2026-08-15: было geosite:geolocation-!ru у google-записи - калька с типового китайского geolocation-!cn (та категория реально есть в geosite.dat), но geolocation-!ru никто не собирает ни в одной сборке geosite.dat, включая Loyalsoldier/v2ray-rules-dat, которую качает scripts/20-node-install.sh. С такой категорией xray падает на старте ЦЕЛИКОМ - 'code not found in geosite.dat: GEOLOCATION-!RU', ещё до routing-правил. Проверено напрямую: xray run -test -c client.json. Порядок теперь важен: RU-резолвер (с ограничением по category-ru) должен идти ПЕРЕД безусловным google, иначе google перехватит все запросы и RU-домены будут резолвиться не через Яндекс.",
     "servers": [
-      { "address": "https://dns.google/dns-query", "domains": ["geosite:geolocation-!ru"] },
       { "address": "77.88.8.8", "domains": ["geosite:category-ru"], "expectIPs": ["geoip:ru"] },
+      { "address": "https://dns.google/dns-query" },
       "localhost"
     ],
     "queryStrategy": "UseIPv4"
@@ -97,6 +98,13 @@
         "outboundTag": "direct"
       },
       { "type": "field", "ip": ["geoip:ru"], "outboundTag": "direct" },
+      {
+        "_comment": "Из анализа пробной подписки стороннего RU-VPN сервиса (vk-proxy.com, 2026-08-15): их профиль рвёт прямой UDP:443 (QUIC) правилом REJECT-DROP, оставляя только TCP/TLS через прокси. Работает ТОЛЬКО когда клиент в TUN-режиме (Hiddify/NekoRay tun2socks и подобные) — тогда весь системный трафик, включая QUIC, реально проходит через этот routing, и правило форсирует TCP-фолбэк вместо утечки прямого QUIC мимо тоннеля или зависания на непроксируемом UDP. При обычном SOCKS/HTTP-инбаунде (как в этом файле) большинство приложений само решает, слать ли UDP в прокси, и часто просто не шлёт — правило тогда почти бесполезно, но и не вредит.",
+        "type": "field",
+        "network": "udp",
+        "port": "443",
+        "outboundTag": "block"
+      },
       { "type": "field", "network": "tcp,udp", "outboundTag": "proxy" }
     ]
   },
