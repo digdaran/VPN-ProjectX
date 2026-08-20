@@ -47,8 +47,8 @@ Templates и настроить Response Rules в панели — это шаг
 | Клиент | Формат | Файл в этом репозитории | Тип шаблона в Remnawave | Статус на проде (`hulgn.08u.ru`) |
 |---|---|---|---|---|
 | INCY, голый Xray-core, большинство остальных (Happ, v2rayNG, Streisand, NekoBox, v2rayN, Hiddify без TUN…) | Xray JSON / `vless://` URI | [`../configs/client-example.json`](../configs/client-example.json), [`../configs/client-multi-profile.json`](../configs/client-multi-profile.json) | XRAY_JSON / `XRAY_BASE64` (fallback-правило) | Работает из коробки, без Template — обычная подписка Remnawave |
-| Clash Meta / Karing (regex `^(?:flclash\|flowvy\|murge\|mihomo\|prizrak-box\|koala-clash\|clash...)`) | Mihomo YAML | [`../configs/client-mihomo-ru.yaml`](../configs/client-mihomo-ru.yaml) | MIHOMO | ✅ Применено 2026-08-15 (активный) |
-| — альтернатива для MIHOMO, не активна | Mihomo YAML | [`../configs/client-mihomo-dropweb.yaml`](../configs/client-mihomo-dropweb.yaml) | MIHOMO (второй именованный шаблон) | 🟡 Загружен 2026-08-20, RoscomVPN остаётся дефолтом — см. раздел ниже |
+| Clash Meta / Karing (regex `^(?:flclash\|flowvy\|murge\|mihomo\|prizrak-box\|koala-clash\|clash...)`) | Mihomo YAML | [`../configs/client-mihomo-dropweb.yaml`](../configs/client-mihomo-dropweb.yaml) | MIHOMO | ✅ **Активен с 2026-08-20** — см. раздел ниже |
+| — резерв для MIHOMO, не активен (был активен до 2026-08-20) | Mihomo YAML | [`../configs/client-mihomo-ru.yaml`](../configs/client-mihomo-ru.yaml) | MIHOMO (шаблон «Default») | 🟡 Применено 2026-08-15, заменено на dropweb-mihomo — переключение назад см. ниже |
 | Clash (обычный, `^clash`, без meta-суффикса) | тот же YAML, что и MIHOMO | [`../configs/client-mihomo-ru.yaml`](../configs/client-mihomo-ru.yaml) | CLASH | ✅ Применено 2026-08-15 (см. обоснование ниже) |
 | Stash (iOS/macOS, `^stash`) | тот же YAML, что и MIHOMO | [`../configs/client-mihomo-ru.yaml`](../configs/client-mihomo-ru.yaml) | STASH | ✅ Применено 2026-08-15 (см. обоснование ниже — НЕ community-шаблон Stash) |
 | sing-box нативный (`sfa\|sfi\|sfm\|sft\|karing\|singbox`) | Singbox JSON | [`../configs/client-singbox-ru.json`](../configs/client-singbox-ru.json) | SINGBOX | ✅ Применено 2026-08-15 (форк с исправлениями, см. ниже) |
@@ -475,7 +475,7 @@ VPN на устройстве** через `ConnectivityManager`, а не то, 
 запятых, только буквы/цифры/подчёркивания/дефисы/пробелы (400 с понятным
 сообщением при нарушении).
 
-### Текущий uuid и как переключиться
+### Текущий uuid и статус — АКТИВЕН на проде (2026-08-20)
 
 ```
 uuid: 82c344fb-c672-4058-8131-a94366f2989b
@@ -483,15 +483,36 @@ name: dropweb-mihomo VPN-ProjectX trimmed
 templateType: MIHOMO
 ```
 
-Response Rule «Mihomo Clients» сейчас никак не указывает конкретный шаблон
-(единственный существовавший на момент настройки — RoscomVPN — брался
-неявно). Чтобы отдавать этот вариант вместо RoscomVPN, в
-`responseModifications` этого правила нужно явно выставить:
+Response Rule «Mihomo Clients» переключён на этот шаблон явно:
 
 ```json
 { "subscriptionTemplate": "dropweb-mihomo VPN-ProjectX trimmed" }
 ```
 
-Обратное переключение — то же поле со значением `"Default"` (имя исходного
-RoscomVPN-шаблона на этой инсталляции) либо вообще без поля
-`responseModifications` (тогда снова берётся дефолт слота).
+Применено через `PATCH /api/subscription-settings` — весь объект
+`responseRules` (все 6 правил) отправлен целиком, изменено только поле
+`responseModifications` у правила «Mihomo Clients», остальные 5 правил и
+все прочие top-level поля (`customRemarks`, `customResponseHeaders`,
+`hwidSettings` и т.д.) переданы как есть — тот же принцип «PATCH заменяет
+объект целиком, не мёржит по ключам», что и в фиксе Happ/INCY выше, только
+здесь объект на уровень выше (`subscription-settings`, а не
+`customResponseHeaders` внутри него).
+
+**Наступили на собственные грабли по пути** — CLAUDE.md инвариант №5 явно
+требует `encoding='utf-8'` для любого инлайн-python на Windows; при первой
+попытке PATCH это правило было нарушено (открывали JSON без явной
+кодировки), и вся кириллица/эмодзи в `customRemarks`/`customResponseHeaders`
+на проде на несколько минут превратилась в mojibake (`→` → `в†’` и т.п.).
+Поймано сразу по ответу PATCH, исправлено повторным PATCH с правильной
+кодировкой в течение той же сессии — сохранено здесь как ещё одно
+подтверждение, почему это правило есть.
+
+**Проверено на живой подписке**, не только round-trip GET настроек:
+тестовый аккаунт `svc-transit-de` (тот же принцип, что и в разделе выше —
+не реальный подписчик), `curl -A "clash-verge/v1.6.6" <ссылка>` — в ответе
+структура `dropweb-mihomo` (`tls-fragment`, `x-anchors`), `discord`/
+`games-direct` отсутствуют, узел подписки подставлен корректно.
+
+Обратное переключение — то же поле у правила «Mihomo Clients» со значением
+`"Default"` (имя исходного RoscomVPN-шаблона на этой инсталляции) либо
+вообще без поля `responseModifications` (тогда снова берётся дефолт слота).
