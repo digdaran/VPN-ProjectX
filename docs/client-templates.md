@@ -47,7 +47,8 @@ Templates и настроить Response Rules в панели — это шаг
 | Клиент | Формат | Файл в этом репозитории | Тип шаблона в Remnawave | Статус на проде (`hulgn.08u.ru`) |
 |---|---|---|---|---|
 | INCY, голый Xray-core, большинство остальных (Happ, v2rayNG, Streisand, NekoBox, v2rayN, Hiddify без TUN…) | Xray JSON / `vless://` URI | [`../configs/client-example.json`](../configs/client-example.json), [`../configs/client-multi-profile.json`](../configs/client-multi-profile.json) | XRAY_JSON / `XRAY_BASE64` (fallback-правило) | Работает из коробки, без Template — обычная подписка Remnawave |
-| Clash Meta / Karing (regex `^(?:flclash\|flowvy\|murge\|mihomo\|prizrak-box\|koala-clash\|clash...)`) | Mihomo YAML | [`../configs/client-mihomo-ru.yaml`](../configs/client-mihomo-ru.yaml) | MIHOMO | ✅ Применено 2026-08-15 |
+| Clash Meta / Karing (regex `^(?:flclash\|flowvy\|murge\|mihomo\|prizrak-box\|koala-clash\|clash...)`) | Mihomo YAML | [`../configs/client-mihomo-ru.yaml`](../configs/client-mihomo-ru.yaml) | MIHOMO | ✅ Применено 2026-08-15 (активный) |
+| — альтернатива для MIHOMO, не активна | Mihomo YAML | [`../configs/client-mihomo-dropweb.yaml`](../configs/client-mihomo-dropweb.yaml) | MIHOMO (второй именованный шаблон) | 🟡 Загружен 2026-08-20, RoscomVPN остаётся дефолтом — см. раздел ниже |
 | Clash (обычный, `^clash`, без meta-суффикса) | тот же YAML, что и MIHOMO | [`../configs/client-mihomo-ru.yaml`](../configs/client-mihomo-ru.yaml) | CLASH | ✅ Применено 2026-08-15 (см. обоснование ниже) |
 | Stash (iOS/macOS, `^stash`) | тот же YAML, что и MIHOMO | [`../configs/client-mihomo-ru.yaml`](../configs/client-mihomo-ru.yaml) | STASH | ✅ Применено 2026-08-15 (см. обоснование ниже — НЕ community-шаблон Stash) |
 | sing-box нативный (`sfa\|sfi\|sfm\|sft\|karing\|singbox`) | Singbox JSON | [`../configs/client-singbox-ru.json`](../configs/client-singbox-ru.json) | SINGBOX | ✅ Применено 2026-08-15 (форк с исправлениями, см. ниже) |
@@ -396,3 +397,101 @@ geosite/geoip тег куда бы то ни было в этом проекте
 существование тем же способом (прямой HTTP-запрос к `data/<tag>` в
 `v2fly/domain-list-community`), а не полагаться на то, что он есть в
 чьём-то чужом Mihomo/Clash-шаблоне.
+
+---
+
+## Второй MIHOMO-шаблон: `configs/client-mihomo-dropweb.yaml` (2026-08-20)
+
+Второй, **не активный** вариант для слота MIHOMO — RoscomVPN-форк выше
+остаётся тем, что реально получают пользователи. Заведён как отдельный
+именованный шаблон в панели (не замена «Default»), чтобы можно было
+переключаться правкой одного поля, не теряя проверенный рабочий вариант.
+
+### Источник и что изменено
+
+Форк [`enkinvsh/dropweb-mihomo`](https://github.com/enkinvsh/dropweb-mihomo)
+(`mihomo.ultimate.yml`), автор — читай README апстрима. Отличается от
+RoscomVPN-форка выше устройством: свои rule-provider'ы
+(`MetaCubeX/meta-rules-dat` + `legiz-ru/mihomo-rule-sets` вместо
+`hydraponique/roscomvpn-*`), TLS-фрагментация (`tls-fragment`), большой
+Android `tun.exclude-package`.
+
+Убрано относительно апстрима (по прямому запросу владельца проекта —
+«много пунктов не нужно», аудитория та же 10–100 личных пользователей):
+
+| Убрано | Что именно |
+|---|---|
+| Discord | Группа `💬 Discord`, providers `discord_domains`/`discord_voiceips`, все правила на них (включая voice-UDP до QUIC-реджекта), ссылка в DNS `nameserver-policy` |
+| Игры | Provider `games-direct`, правило `RULE-SET,games-direct,♻️ DIRECT` |
+| Криптобиржи | Provider `crypto-exchanges` + inline `additional-crypto-exchanges`, правило DIRECT — актуально только при реальной торговле с этих IP |
+| Телефония Mango Office | `mango-domains`/`mango-ips` providers, все три связанных правила (домены/голые IP/desktop-процесс) — нишевый корпоративный SIP-провайдер |
+| Whitelist рекламных кабинетов | DNS `nameserver-policy` (VK Ads/Яндекс Директ+Метрика/GA4/GTM/Adjust/AppsFlyer/Ozon-WB Seller), `fake-ip-filter` для `ads.vk.com`, DOMAIN-SUFFIX правила — нужно только тем, кто ведёт рекламные кампании/продажи |
+| «Честный Знак» | `crpt.ru`/`crpt.tech` DIRECT — маркировка товаров, розница |
+| Группа `▶️ YouTube` | Свёрнута: правило `RULE-SET,youtube,...` теперь ведёт прямо в `🌍 VPN` вместо отдельного селектора — на один пункт меню меньше |
+
+**Сознательно НЕ тронуто:** `tun.exclude-package` (~400 российских Android
+package-имён, ~530 строк). Не пункт меню — Android-специфичный механизм
+(`VpnService.addDisallowedApplication()`), исключает конкретные приложения
+из TUN-интерфейса на уровне ОС. Нужен потому, что anti-fraud SDK многих
+российских банковских/госуслуг-приложений проверяет **сам факт активного
+VPN на устройстве** через `ConnectivityManager`, а не то, куда реально
+маршрутизируется трафик конкретного приложения — доменные DIRECT-правила
+эту проблему в принципе не решают (тот же класс проблемы, что был у
+телефонии Mango, только там причина «голый IP без домена», здесь —
+«приложению плевать на маршрутизацию, оно смотрит на статус VPN в ОС»).
+Поддерживается апстримом (`legiz`, автосборка) — не наша забота по
+актуализации, и безвреден на не-Android клиентах (поле просто игнорируется,
+подтверждено `mihomo -t`).
+
+### Проверка (не на глаз)
+
+- `mihomo -t` (MetaCubeX/mihomo **v1.19.30**, официальный релиз) — со
+  симулированной инъекцией узла на все 5 маркеров `# LEAVE THIS LINE!`
+  (было 8 в апстриме — 3 маркера ушли вместе с группами YouTube/Discord/
+  Cascade): `test is successful`.
+- Все **30** уникальных rule-provider URL прогнаны напрямую (`curl -o
+  /dev/null -w '%{http_code}'`) — все `200`. В апстриме была задокументирована
+  опечатка `category-crypto-exchanges` (404, правильно
+  `category-cryptocurrency`) — на момент проверки уже исправлена в самом
+  апстриме, но провайдер целиком всё равно убран у нас (см. таблицу выше).
+- После правок — финальный grep-проход по всем убранным идентификаторам
+  (`discord`, `cascade`, `mango`, `crypto`, `crpt`, `games-direct`,
+  `▶️ YouTube`) на предмет осиротевших ссылок в оставшемся файле — чисто,
+  только сами объяснения в шапке файла.
+
+### Механика API: второй нюанс сверх того, что описано выше
+
+`POST /api/subscription-templates` создаёт новый именованный шаблон, но
+**игнорирует** `encodedTemplateYaml`/`templateJson` из тела запроса — новый
+шаблон создаётся с заглушкой Remnawave по умолчанию (`mode: global`,
+`allow-lan: true`, generic fake-ip filter, без единого прокси/правила).
+Реальный контент нужно заливать **отдельным** `PATCH /api/subscription-templates`
+с `uuid` только что созданного шаблона — та же ручка и то же тело, что и для
+правки уже существующих слотов (см. выше). Round-trip `GET` после `PATCH`
+подтверждён побайтово (`hashlib`/прямое сравнение байтов — 42135 байт,
+идентично файлу в этом репозитории).
+
+Также обнаружилось ограничение на имя: `^[A-Za-z0-9_\s-]+$` — ни скобок, ни
+запятых, только буквы/цифры/подчёркивания/дефисы/пробелы (400 с понятным
+сообщением при нарушении).
+
+### Текущий uuid и как переключиться
+
+```
+uuid: 82c344fb-c672-4058-8131-a94366f2989b
+name: dropweb-mihomo VPN-ProjectX trimmed
+templateType: MIHOMO
+```
+
+Response Rule «Mihomo Clients» сейчас никак не указывает конкретный шаблон
+(единственный существовавший на момент настройки — RoscomVPN — брался
+неявно). Чтобы отдавать этот вариант вместо RoscomVPN, в
+`responseModifications` этого правила нужно явно выставить:
+
+```json
+{ "subscriptionTemplate": "dropweb-mihomo VPN-ProjectX trimmed" }
+```
+
+Обратное переключение — то же поле со значением `"Default"` (имя исходного
+RoscomVPN-шаблона на этой инсталляции) либо вообще без поля
+`responseModifications` (тогда снова берётся дефолт слота).
