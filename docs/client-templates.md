@@ -51,8 +51,8 @@ Templates и настроить Response Rules в панели — это шаг
 | — резерв для MIHOMO, не активен (был активен до 2026-08-20) | Mihomo YAML | [`../configs/client-mihomo-ru.yaml`](../configs/client-mihomo-ru.yaml) | MIHOMO (шаблон «Default») | 🟡 Применено 2026-08-15, заменено на dropweb-mihomo — переключение назад см. ниже |
 | Clash (обычный, `^clash`, без meta-суффикса) | тот же YAML, что и MIHOMO-слот выше | [`../configs/client-mihomo-dropweb.yaml`](../configs/client-mihomo-dropweb.yaml) | CLASH | ✅ **Активен с 2026-08-20** (отдельный именованный шаблон `... CLASH`, тот же файл) |
 | Stash (iOS/macOS, `^stash`) | тот же YAML, что и MIHOMO-слот выше | [`../configs/client-mihomo-dropweb.yaml`](../configs/client-mihomo-dropweb.yaml) | STASH | ✅ **Активен с 2026-08-20** (отдельный именованный шаблон `... STASH`, тот же файл; см. обоснование «не community-шаблон Stash» ниже — оно по-прежнему в силе) |
-| sing-box нативный (`sfa\|sfi\|sfm\|sft\|karing\|singbox`) | Singbox JSON | [`../configs/client-singbox-ru.json`](../configs/client-singbox-ru.json) | SINGBOX | ✅ Применено 2026-08-15 (форк с исправлениями, см. ниже) |
-| — (нет активного Response Rule) | Xray JSON | — | XRAY_JSON | Пусто, не трогали — ни одно из 6 текущих Response Rules на это не указывает |
+| sing-box нативный (`sfa\|sfi\|sfm\|sft\|karing\|singbox`) | Singbox JSON | [`../configs/client-singbox-ru.json`](../configs/client-singbox-ru.json) | SINGBOX | ✅ Применено 2026-08-15, DNS-миграция на новый формат — 2026-08-20 (см. ниже) |
+| — (нет активного Response Rule) | Xray JSON | — | XRAY_JSON | Не тронуто. Уточнение 2026-08-20: слот НЕ `null` — там встроенная заглушка Remnawave (локальный SOCKS/HTTP-прокси без нод, генерируется автоматически при создании любого нового шаблона), но это не имеет значения: ни одно из 6 Response Rules не ссылается на `responseType: XRAY_JSON`, слот мёртвый код |
 
 INCY официально числится в списке клиентов Remnawave — Xray-core,
 VLESS/VMess/Trojan/Shadowsocks, поддержка HWID-лимита устройств
@@ -277,12 +277,40 @@ PATCH /api/subscription-templates
 | Нет `route.final` | Без явного `final` неотвеченные правила уходят на первый `outbounds[0]` — а это `"direct"`. Тот же класс проблемы, что нашли в отклонённом Stash-шаблоне (см. выше) — «по умолчанию мимо тоннеля» | Добавлено `"route.final": "default"` (то есть на `⚡️ Auto`/реальные ноды) |
 | Нет правила для приватных IP | В отличие от официального `Default Singbox` (там есть `{"outbound":"direct","ip_is_private":true}`) и вообще всех остальных наших шаблонов/конфигов — здесь его не было. Локальная сеть тоже пошла бы в `default` после фикса `route.final` выше | Добавлено `{"ip_is_private": true, "outbound": "direct"}` сразу после sniff/hijack-dns |
 
-**Не тронуто сознательно:** устаревший формат `dns.servers` (deprecated в
-sing-box 1.12, будет удалён в 1.14) — предупреждение, не фатальная ошибка,
-и им страдает **и официальный шаблон Remnawave тоже** (проверено). Полная
-миграция на новый DNS-формат — отдельная задача, рискованная без
-полноценного повторного тестирования; отложено. Нужно будет решить до
-релиза sing-box 1.14.
+**Обновление 2026-08-20 — мигрировано, срочность оказалась выше, чем
+думали.** На `sing-box check` **v1.13.19** (вышла буквально между сессиями,
+на v1.13.18 из абзаца выше это ещё было предупреждением) оба пункта из
+абзаца выше стали `FATAL` по умолчанию — апстрим закрыл лазейку раньше
+объявленного 1.14. Мигрировано по официальному
+[migration guide](https://sing-box.sagernet.org/migration/#migrate-to-new-dns-server-formats):
+
+| Было (legacy) | Стало |
+|---|---|
+| `{"tag":"dns-remote","address":"tls://1.1.1.1","detour":"default","address_strategy":"ipv4_only"}` | `{"type":"tls","tag":"dns-remote","server":"1.1.1.1","detour":"default"}` — `address_strategy`/`domain_resolver` убраны: адрес уже IP-литерал, резолвить нечего, поле per Dial Fields спеке в этом случае просто игнорируется |
+| `{"tag":"dns-local","address":"local"}` | `{"type":"local","tag":"dns-local"}` |
+| `{"tag":"dns-block","address":"rcode://success"}` + правило `{"server":"dns-block",...}` | Сервер убран целиком; правило переписано на `{"action":"predefined","rcode":"NOERROR",...}` (легаси-имя `success` → актуальное DNS RFC-имя `NOERROR`) |
+| — | Добавлено `route.default_domain_resolver: {"server":"dns-local"}` |
+
+По пути найдены две неточности в официальном migration guide (не совпадали
+с реальным поведением бинарника, проверено `sing-box check` v1.13.19):
+`rcode: "SUCCESS"` — невалидное значение, гайд спутал легаси-алиас с
+актуальным именем (правильно `NOERROR`, полный список — `NOERROR`/`FORMERR`/
+`SERVFAIL`/`NXDOMAIN`/`NOTIMP`/`REFUSED`); `strategy` как отдельное поле на
+DNS-сервере типа `tls` — тоже несуществующее поле, актуальный путь для
+IPv4-only — через `domain_resolver`-объект в Dial Fields, но здесь он и
+вовсе не нужен (см. таблицу выше).
+
+`sing-box format -w` заодно предложил переупорядочить ключи и убрать
+дефолтное `"format": "binary"` из всех восьми `route.rule_set` записей —
+косметика форматтера, семантически нейтральная, но вне scope этой правки;
+сознательно откачена, чтобы диф остался строго по DNS-миграции.
+
+Применено через `PATCH /api/subscription-templates` (`templateJson`
+целиком, `uuid` шаблона SINGBOX-слота). Round-trip подтверждён структурно
+(`json ==`, не побайтово — сервер может переупорядочить ключи при
+пересериализации). Живая подписка (`svc-transit-de`, UA `singbox/1.9.0`)
+прогнана через `sing-box check` v1.13.19 **без единой переменной
+окружения** — чисто, `EXIT=0`, ни warning, ни error.
 
 **Важное отличие от YAML-шаблонов: `_comment`-ключи здесь недопустимы.**
 sing-box использует строгий JSON-декодер — лишнее поле верхнего уровня
