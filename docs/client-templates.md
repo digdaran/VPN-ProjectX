@@ -49,8 +49,8 @@ Templates и настроить Response Rules в панели — это шаг
 | INCY, голый Xray-core, большинство остальных (Happ, v2rayNG, Streisand, NekoBox, v2rayN, Hiddify без TUN…) | Xray JSON / `vless://` URI | [`../configs/client-example.json`](../configs/client-example.json), [`../configs/client-multi-profile.json`](../configs/client-multi-profile.json) | XRAY_JSON / `XRAY_BASE64` (fallback-правило) | Работает из коробки, без Template — обычная подписка Remnawave |
 | Clash Meta / Karing (regex `^(?:flclash\|flowvy\|murge\|mihomo\|prizrak-box\|koala-clash\|clash...)`) | Mihomo YAML | [`../configs/client-mihomo-dropweb.yaml`](../configs/client-mihomo-dropweb.yaml) | MIHOMO | ✅ **Активен с 2026-08-20** — см. раздел ниже |
 | — резерв для MIHOMO, не активен (был активен до 2026-08-20) | Mihomo YAML | [`../configs/client-mihomo-ru.yaml`](../configs/client-mihomo-ru.yaml) | MIHOMO (шаблон «Default») | 🟡 Применено 2026-08-15, заменено на dropweb-mihomo — переключение назад см. ниже |
-| Clash (обычный, `^clash`, без meta-суффикса) | тот же YAML, что и MIHOMO | [`../configs/client-mihomo-ru.yaml`](../configs/client-mihomo-ru.yaml) | CLASH | ✅ Применено 2026-08-15 (см. обоснование ниже) |
-| Stash (iOS/macOS, `^stash`) | тот же YAML, что и MIHOMO | [`../configs/client-mihomo-ru.yaml`](../configs/client-mihomo-ru.yaml) | STASH | ✅ Применено 2026-08-15 (см. обоснование ниже — НЕ community-шаблон Stash) |
+| Clash (обычный, `^clash`, без meta-суффикса) | тот же YAML, что и MIHOMO-слот выше | [`../configs/client-mihomo-dropweb.yaml`](../configs/client-mihomo-dropweb.yaml) | CLASH | ✅ **Активен с 2026-08-20** (отдельный именованный шаблон `... CLASH`, тот же файл) |
+| Stash (iOS/macOS, `^stash`) | тот же YAML, что и MIHOMO-слот выше | [`../configs/client-mihomo-dropweb.yaml`](../configs/client-mihomo-dropweb.yaml) | STASH | ✅ **Активен с 2026-08-20** (отдельный именованный шаблон `... STASH`, тот же файл; см. обоснование «не community-шаблон Stash» ниже — оно по-прежнему в силе) |
 | sing-box нативный (`sfa\|sfi\|sfm\|sft\|karing\|singbox`) | Singbox JSON | [`../configs/client-singbox-ru.json`](../configs/client-singbox-ru.json) | SINGBOX | ✅ Применено 2026-08-15 (форк с исправлениями, см. ниже) |
 | — (нет активного Response Rule) | Xray JSON | — | XRAY_JSON | Пусто, не трогали — ни одно из 6 текущих Response Rules на это не указывает |
 
@@ -516,3 +516,44 @@ Response Rule «Mihomo Clients» переключён на этот шаблон
 Обратное переключение — то же поле у правила «Mihomo Clients» со значением
 `"Default"` (имя исходного RoscomVPN-шаблона на этой инсталляции) либо
 вообще без поля `responseModifications` (тогда снова берётся дефолт слота).
+
+### CLASH и STASH — распространено следом (2026-08-20, тем же заходом)
+
+Слоты CLASH и STASH держат шаблоны **отдельно от MIHOMO** — это три разных
+`templateType`, хоть Remnawave и трактует их одним рендерящим ядром (см.
+обоснование «CLASH/STASH = тот же движок, что MIHOMO» в разделе про
+RoscomVPN-форк выше — оно не изменилось). Значит одного шаблона MIHOMO
+недостаточно: под каждый тип нужен свой именованный шаблон с тем же файлом.
+
+Заведено ещё два `POST` (тот же файл `client-mihomo-dropweb.yaml`, что и
+для MIHOMO):
+
+```
+uuid: eb650005-b573-4078-9411-affaaee930c2
+name: dropweb-mihomo VPN-ProjectX trimmed CLASH
+templateType: CLASH
+
+uuid: 08947e43-754b-4310-92cf-d9fa6b4920d8
+name: dropweb-mihomo VPN-ProjectX trimmed STASH
+templateType: STASH
+```
+
+Оба — `POST` (создание с заглушкой) → `PATCH` по `uuid` (реальный контент,
+идентичен `client-mihomo-dropweb.yaml`, round-trip подтверждён побайтово,
+42135 байт для обоих). Response Rules «Clash Core Clients» и «Stash (iOS,
+macOS)» переключены той же схемой, что и «Mihomo Clients» выше — весь
+`responseRules` целиком, изменено только `responseModifications` у двух
+правил.
+
+**Проверено на живой подписке** тем же `svc-transit-de` с двумя UA:
+`curl -A "clash/1.18.0"` (обычный `^clash`, не meta-вариант — падает в
+правило Clash Core Clients, а не в Mihomo Clients: у того regex ловит
+только `clash-verge`/`clash-nyanpasu`/`clashx meta`/`clash.meta`/
+`clash-meta`, голый `clash/...` не матчит) и `curl -A "stash/2.6.0"` — оба
+ответа содержат `tls-fragment` (маркер структуры dropweb) и не содержат
+`discord`.
+
+Итог: все три YAML-слота (MIHOMO/CLASH/STASH) теперь синхронно отдают
+`client-mihomo-dropweb.yaml`, RoscomVPN-форк остаётся только резервным —
+описанным способом переключения назад для каждого из трёх правил
+по отдельности.
