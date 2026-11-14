@@ -102,7 +102,7 @@ Remnawave, см. [`docs/panel-comparison.md`](docs/panel-comparison.md)) — а�
 |---|---|---|---|
 | 443 | RU-нода | VLESS+XHTTP+Reality, клиентский вход | Весь интернет |
 | 127.0.0.1:8443 | RU-нода | nginx self-steal (dest для Reality) | Только сам Xray (dest) |
-| 8443 | Выходная нода (все 6: FR/KZ/FI/NL/DE/MD) | VLESS+XHTTP+Reality, транзит с RU (`transit-in-*`) | Только IP RU-ноды (firewall) |
+| 8443 | Выходная нода (все 7: FR/KZ/FI/NL/DE/MD/AT) | VLESS+XHTTP+Reality, транзит с RU (`transit-in-*`) | Только IP RU-ноды (firewall) |
 | 443 | Выходная нода (все 6, **кроме FR — см. ниже**) | VLESS+XHTTP+Reality, прямой клиентский вход (Direct) — squad'ы `Tavrida`/`VIP Users`/`Standard Access` (см. §10) | Весь интернет |
 | 2083 | Выходная нода **FR only** | То же самое (Direct), но на 443 у FR порт воспроизводимо не отвечает на TLS-уровне (ADR-0018, root cause не найден) — 2083 как рабочее исключение | Весь интернет |
 | 9443 | Выходная нода (все 6) | VLESS+TCP+Reality, резервный транспорт без XHTTP (Reserve/RAW) — те же squad'ы, что и Direct | Весь интернет |
@@ -110,6 +110,7 @@ Remnawave, см. [`docs/panel-comparison.md`](docs/panel-comparison.md)) — а�
 | 127.0.0.1:10085 | Любая нода | Xray API (HandlerService/StatsService/LoggerService) | Только localhost |
 | 443/3000 | Панель | Remnawave Panel (за nginx reverse proxy) | Ограничено allow-list/Cloudflare Access |
 | 3010 | Панель | Sub Page (страница подписки) | Весь интернет (публичная) |
+| 127.0.0.1:10443 | Выходная нода | nginx self-steal (`dest` для `client-in-*`, свой домен `v<страна>.08u.ru`) — не 8443, он занят транзитом | Только сам Xray (dest) |
 | 80 | Панель, RU-нода, выходные ноды | ACME challenge + редирект на 443 | Весь интернет |
 | 22/22, `--ssh-port` | Все узлы | SSH, только по ключу | Ограничено (fail2ban) |
 | 25/465/587 (исходящие) | RU-нода, выходные ноды | SMTP | **Заблокировано** (гигиена белого IP) |
@@ -175,8 +176,8 @@ Remnawave, см. [`docs/panel-comparison.md`](docs/panel-comparison.md)) — а�
 |---|---|---|---|
 | `00-hardening.sh --role panel\|node\|awg [--ru-entry] [--exit-ips ...] [--transit-port] [--no-fw-reset] [--awg-port]` | Все узлы | SSH только по ключу + смена порта, ufw (deny-by-default), fail2ban, BBR+fq, лимиты FD, Docker, блок исходящего SMTP, автообновления, swap | Роль `node --ru-entry` открывает 443 всем; `node` без флага — только с `--exit-ips`. `--transit-port`/`--no-fw-reset` — режим сосуществования с уже работающим сервисом (см. §7.1). Роль `awg` открывает только `--awg-port`/udp. SSH-порт меняется и под `ssh.socket` (Ubuntu 22.10+), с проверкой до включения ufw |
 | `10-panel-install.sh --domain --sub-domain --email` | DE-panel | Remnawave Panel + Postgres + Sub Page (Docker Compose), nginx reverse proxy, сертификат, ежедневный `pg_dump`-бэкап в 04:17 UTC | Секреты в `/opt/remnawave/.env` (chmod 600) — не коммитить |
-| `20-node-install.sh --panel-ip --node-port` | Любая нода | Remnanode (Docker), geoip/geosite (еженедельное обновление по понедельникам), firewall панель→нода | Требует вставки `SECRET_KEY` из сгенерированного панелью docker-compose.yml (Nodes → нода → «Copy docker-compose.yml») вручную |
-| `30-selfsteal.sh --domain --email` | RU-нода (+ опционально зарубежные при public-входе) | nginx на `127.0.0.1:8443`, Let's Encrypt, шаблон реального сайта в `/var/www/selfsteal`, автообновление сертификата | **Обязательно заменить шаблонный контент** — одинаковый контент на разных IP сам по себе сигнатура |
+| `20-node-install.sh --panel-ip --node-port [--secret-key] [--image-tag 3.4.2]` | Любая нода | Remnanode (Docker), geoip/geosite (еженедельное обновление по понедельникам), firewall панель→нода | Требует вставки `SECRET_KEY` из сгенерированного панелью docker-compose.yml (Nodes → нода → «Copy docker-compose.yml») вручную |
+| `30-selfsteal.sh --domain [--email] [--listen-port]` | RU-нода (8443) и выходные ноды (`--listen-port 10443`) | nginx на `127.0.0.1:<listen-port>`, Let's Encrypt, шаблон реального сайта в `/var/www/selfsteal`, автообновление сертификата | **Обязательно заменить шаблонный контент** — одинаковый контент на разных IP сам по себе сигнатура |
 | `40-keygen.sh --name --sni [--selfsteal] [--port]` | Любая нода (запуск при подготовке конфига) | Генерирует Reality keypair, UUID, shortId'ы, правдоподобный XHTTP-путь; печатает готовые фрагменты server/client конфига и `vless://`-ссылку | Ничего не пишет на диск — только stdout. `--port` — если транзитный порт не 443 (см. §7.1) |
 | `50-preflight.sh [файлы]` | Локально, перед выкаткой | Валидность JSON, незаменённые плейсхолдеры, fingerprint, парность xmux, блок торрентов/private, кросс-сверка `transit-in` ↔ `out-*` | Не трогает серверы — чисто статический анализ конфигов |
 | `60-entry-test.sh --hosts "..." [--proxy host:port]` | Запускать **из России**, не с сервера | Проверка входов на объёме (10 КБ → 5 МБ) — ловит `tcp 16-20`, которое рукопожатие не показывает | Не изменяет инфраструктуру, только измеряет |
@@ -265,7 +266,7 @@ Remnawave подставляет пользователю в подписку in
 | `Tavrida` | все 12 `client-in-*`/`raw-in-*` (все 6 нод: FR/KZ/FI/NL/DE/MD), **без** RU-Gate | Узкий круг №1 |
 | `VIP Users` | те же 12 + `vless-xhttp-reality-in` (RU-Gate, порт 443 на ru-entry) | Узкий круг №2 (плюс вход через РФ) |
 | `Standard Access` | `client-in-*`/`raw-in-*` только безлимитных нод (KZ/FI/NL/MD) — без RU-Gate, без FR/DE | Все остальные обычные пользователи |
-| `Transit-FR`/`Transit-KZ`/`Transit-FI`/`Transit-NL`/`Transit-DE`/`Transit-MD` | По одному `transit-in-*` на squad | Служебные пользователи (`svc-transit-*`) — see §7, не для людей |
+| `Transit-FR`/`Transit-KZ`/`Transit-FI`/`Transit-NL`/`Transit-DE`/`Transit-MD`/`Transit-AT` | По одному `transit-in-*` на squad | Служебные пользователи (`svc-transit-*`) — see §7, не для людей |
 
 `Tavrida` и `VIP Users` оба видят вообще все ноды — единственная разница
 между ними в том, что `VIP Users` дополнительно даёт RU-Gate, а `Tavrida`

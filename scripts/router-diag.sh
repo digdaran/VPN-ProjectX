@@ -17,7 +17,8 @@ Finland2|vfin2.08u.ru|135.136.177.114
 Kazakhstan|vkz.08u.ru|206.223.247.6
 France|131.123.36.11|131.123.36.11
 Germany|103.244.227.56|103.244.227.56
-Moldova|80.96.113.152|80.96.113.152"
+Moldova|80.96.113.152|80.96.113.152
+Austria|vau.08u.ru|85.192.27.243"
 
 tcp()   { timeout 7 nc -z -w 6 "$1" "$2" >/dev/null 2>&1 && echo "ok  " || echo "FAIL"; }
 ascii() { LC_ALL=C tr -cd '\11\12\40-\176' | sed 's/^ *//'; }

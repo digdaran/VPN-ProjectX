@@ -2,8 +2,10 @@
 #
 # 30-selfsteal.sh — self-steal сайт-донор для RU-ноды
 #
-# Разворачивает nginx на 127.0.0.1:8443 с настоящим сертификатом Let's Encrypt
-# на ваш домен. Reality на порту 443 будет проксировать сюда активные зонды.
+# Разворачивает nginx на 127.0.0.1:<listen-port> (по умолчанию 8443) с настоящим
+# сертификатом Let's Encrypt на ваш домен. Reality на порту 443 будет проксировать
+# сюда активные зонды. На ВЫХОДНОЙ ноде 8443 занят transit-in (ADR-0018) —
+# там --listen-port 10443 (dest client-in-* = 127.0.0.1:10443).
 #
 # Зачем: классический Reality с чужим SNI (www.microsoft.com) на российском
 # хостинге даёт несоответствие SNI ↔ ASN — сертификат Microsoft, а IP
@@ -11,12 +13,17 @@
 # целиком: домен → ваш IP → ваш сертификат → ваш реальный сайт.
 #
 #   sudo bash 30-selfsteal.sh --domain vpn.example.ru --email you@mail.com
+#   sudo bash 30-selfsteal.sh --domain vxx.example.ru --listen-port 10443   # выходная нода
+#
+# --email необязателен: без него аккаунт LE регистрируется без контакта
+# (--register-unsafely-without-email) — так сделаны все выходные ноды.
 #
 set -euo pipefail
 
 DOMAIN=""
 EMAIL=""
 WEBROOT="/var/www/selfsteal"
+LISTEN_PORT="8443"
 
 log()  { printf '\033[1;32m[+]\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33m[!]\033[0m %s\n' "$*"; }
@@ -26,13 +33,18 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --domain) DOMAIN="$2"; shift 2 ;;
     --email)  EMAIL="$2";  shift 2 ;;
+    --listen-port) LISTEN_PORT="$2"; shift 2 ;;
     *) die "Неизвестный аргумент: $1" ;;
   esac
 done
 
 [[ $EUID -eq 0 ]] || die "Запускайте от root"
 [[ -n "$DOMAIN" ]] || die "Укажите --domain"
-[[ -n "$EMAIL"  ]] || die "Укажите --email (для уведомлений Let's Encrypt)"
+if [[ -n "$EMAIL" ]]; then LE_CONTACT=(--email "$EMAIL" --no-eff-email)
+else warn "--email не указан — аккаунт LE без контакта (нет писем об истечении)"; LE_CONTACT=(--register-unsafely-without-email); fi
+PORT_OWNER="$(ss -Htlnp "( sport = :$LISTEN_PORT )" 2>/dev/null || true)"
+[[ -z "$PORT_OWNER" || "$PORT_OWNER" == *nginx* ]] \
+  || die "Порт $LISTEN_PORT уже занят не nginx (на выходной ноде это transit-in) — укажите --listen-port 10443"
 
 # ── Проверка DNS ───────────────────────────────────────────────────────────
 log "Проверка DNS для $DOMAIN"
@@ -159,14 +171,14 @@ nginx -t || die "Временный конфиг nginx невалиден"
 systemctl start nginx
 
 certbot certonly --webroot -w /var/www/certbot \
-  -d "$DOMAIN" --email "$EMAIL" \
-  --agree-tos --non-interactive --no-eff-email \
+  -d "$DOMAIN" "${LE_CONTACT[@]}" \
+  --agree-tos --non-interactive \
   || die "Certbot не смог выпустить сертификат. Проверьте, что порт 80 доступен снаружи и DNS распространился."
 
 log "Сертификат получен"
 
 # ── Боевой конфиг ──────────────────────────────────────────────────────────
-log "Применение боевого конфига nginx (127.0.0.1:8443)"
+log "Применение боевого конфига nginx (127.0.0.1:$LISTEN_PORT)"
 rm -f /etc/nginx/sites-enabled/selfsteal-acme
 
 cat > /etc/nginx/sites-available/selfsteal <<EOF
@@ -175,7 +187,7 @@ server {
     # так работает и на старом nginx 1.18 из репозитория Ubuntu/Debian,
     # и на новом. Отдельная директива появилась только в nginx 1.25.1+
     # и ломает конфиг на всём, что старше.
-    listen 127.0.0.1:8443 ssl http2;
+    listen 127.0.0.1:$LISTEN_PORT ssl http2;
     server_name $DOMAIN;
 
     ssl_certificate         /etc/letsencrypt/live/$DOMAIN/fullchain.pem;
@@ -244,10 +256,10 @@ systemctl enable --now certbot.timer 2>/dev/null || true
 
 # ── Проверка ───────────────────────────────────────────────────────────────
 log "Локальная проверка"
-if curl -sS -k --max-time 10 --resolve "$DOMAIN:8443:127.0.0.1" "https://$DOMAIN:8443/" -o /dev/null -w '%{http_code}\n' | grep -q 200; then
-  log "nginx на 127.0.0.1:8443 отвечает 200"
+if curl -sS -k --max-time 10 --resolve "$DOMAIN:$LISTEN_PORT:127.0.0.1" "https://$DOMAIN:$LISTEN_PORT/" -o /dev/null -w '%{http_code}\n' | grep -q 200; then
+  log "nginx на 127.0.0.1:$LISTEN_PORT отвечает 200"
 else
-  warn "nginx на 127.0.0.1:8443 не ответил 200 — проверьте /var/log/nginx/selfsteal_error.log"
+  warn "nginx на 127.0.0.1:$LISTEN_PORT не ответил 200 — проверьте /var/log/nginx/selfsteal_error.log"
 fi
 
 cat <<EOF
@@ -257,12 +269,12 @@ cat <<EOF
 ════════════════════════════════════════════════════════════════
   Домен      : $DOMAIN
   IP         : $SERVER_IP
-  nginx      : 127.0.0.1:8443 (TLS) + 0.0.0.0:80 (ACME/redirect)
+  nginx      : 127.0.0.1:$LISTEN_PORT (TLS) + 0.0.0.0:80 (ACME/redirect)
   Сертификат : /etc/letsencrypt/live/$DOMAIN/
   Контент    : $WEBROOT
 
   В конфиге Xray для этой ноды укажите:
-      "dest"        : "127.0.0.1:8443"
+      "dest"        : "127.0.0.1:$LISTEN_PORT"
       "serverNames" : ["$DOMAIN"]
 
   ⚠️  ЗАМЕНИТЕ содержимое $WEBROOT на что-то уникальное.

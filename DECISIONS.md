@@ -638,3 +638,30 @@ RU-Gate не будет работать.
   проверив Mihomo (`scripts/router-diag.sh` или mihomo-probe: ERROR(503) при живом TCP).
 - (−) Затронуты все Mihomo-клиенты во всех сквадах (FlClash, clash.meta), не только Tavrida.
 
+
+---
+
+## ADR-0022. Седьмая выходная нода: Austria (vau.08u.ru)
+
+**Статус:** Действует (2026-11-14).
+
+**Решение.** Нода `Austria` (85.192.27.243, Ubuntu 24.04, 1 vCPU/2 GB) — клон
+`exit-md`: профиль `exit-at`, remnanode **3.4.2** (ADR-0021), SSH 22022.
+- `client-in-at` :443 — self-steal `vau.08u.ru` (`dest 127.0.0.1:10443`, LE,
+  своя заглушка-сайт), хост `🇦🇹 Austria · Direct`.
+- `transit-in-at` :8443 — донор `www.apple.com` (ни у кого больше), ufw только
+  с RU-Gate 194.87.239.77.
+- Доступ: `Standard Access`, `VIP Users`, `Transit-AT` (+ `svc-transit-at`).
+  **Не в `Tavrida`** — по прямому указанию владельца.
+
+**Найдено по ходу (исправлено в скриптах).**
+- `30-selfsteal.sh` слушал жёстко `127.0.0.1:8443` — на выходной ноде это
+  порт `transit-in`. Добавлен `--listen-port` (на выходах 10443, как уже было
+  вручную на KZ/MD), `--email` стал необязательным (LE без контакта).
+- `20-node-install.sh` ставил `remnawave/node:latest` вопреки ADR-0021 —
+  добавлен `--image-tag`, по умолчанию 3.4.2.
+
+**Транзит.** `out-at` (клон `out-md`, 85.192.27.243:8443, `svc-transit-at`)
+добавлен в `ru-entry` и в `eu-pool` (leastPing; observatory `subjectSelector
+["out-"]` подхватывает его сам). Проверено: RU-Gate держит соединения к AT:8443,
+`svc-transit-at` онлайн на ноде.

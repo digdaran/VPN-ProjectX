@@ -29,6 +29,9 @@
 set -euo pipefail
 
 PANEL_IP=""; NODE_PORT="2222"; SECRET_KEY=""
+# Тег образа закреплён (ADR-0021): Xray ≥ 26.9.8 (remnanode ≥ 3.4.4) ломает
+# REALITY для Mihomo-клиентов. Обновлять только явно, проверив Mihomo.
+IMAGE_TAG="3.4.2"
 DIR="/opt/remnanode"
 
 log()  { printf '\033[1;32m[+]\033[0m %s\n' "$*"; }
@@ -41,6 +44,7 @@ while [[ $# -gt 0 ]]; do
     --node-port)  NODE_PORT="$2"; shift 2 ;;
     --secret-key) SECRET_KEY="$2"; shift 2 ;;
     --dir)        DIR="$2"; shift 2 ;;
+    --image-tag)  IMAGE_TAG="$2"; shift 2 ;;
     *) die "Неизвестный аргумент: $1" ;;
   esac
 done
@@ -67,10 +71,10 @@ EOF
 chmod 600 "$DIR/.env"
 
 log "Создание docker-compose.yml"
-cat > "$DIR/docker-compose.yml" <<'EOF'
+cat > "$DIR/docker-compose.yml" <<EOF
 services:
   remnanode:
-    image: remnawave/node:latest
+    image: remnawave/node:$IMAGE_TAG
     container_name: remnanode
     hostname: remnanode
     restart: always
