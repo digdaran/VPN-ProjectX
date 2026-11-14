@@ -7,6 +7,7 @@
 #   sudo bash 00-hardening.sh --role node  --panel-ip 1.2.3.4 --ssh-port 22022
 #   sudo bash 00-hardening.sh --role panel --ssh-port 22022
 #   sudo bash 00-hardening.sh --role node  --panel-ip 1.2.3.4 --ru-entry --exit-ips "5.6.7.8"
+#   sudo bash 00-hardening.sh --role awg   --awg-port 47321 --ssh-port 22022   # AWG-контур, ADR-0008
 #
 # На сервере, где уже работает что-то своё (например x-ui) — режим сосуществования:
 #   sudo bash 00-hardening.sh --role node --panel-ip 1.2.3.4 --exit-ips "5.6.7.8" \
@@ -23,6 +24,7 @@ NODE_PORT="2222"
 TRANSIT_PORT="443"
 NO_FW_RESET=0
 DISABLE_IPV6=0
+AWG_PORT=""
 
 log()  { printf '\033[1;32m[+]\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33m[!]\033[0m %s\n' "$*"; }
@@ -39,13 +41,19 @@ while [[ $# -gt 0 ]]; do
     --transit-port) TRANSIT_PORT="$2"; shift 2 ;;
     --no-fw-reset)  NO_FW_RESET=1; shift ;;
     --disable-ipv6) DISABLE_IPV6=1; shift ;;
+    --awg-port)  AWG_PORT="$2"; shift 2 ;;
     *) die "Неизвестный аргумент: $1" ;;
   esac
 done
 
 [[ $EUID -eq 0 ]] || die "Запускайте от root"
-[[ -n "$ROLE" ]]  || die "Укажите --role node|panel"
+[[ -n "$ROLE" ]]  || die "Укажите --role node|panel|awg"
 [[ "$ROLE" == "node" && -z "$PANEL_IP" ]] && die "Для роли node нужен --panel-ip"
+if [[ "$ROLE" == "awg" ]]; then
+  [[ "$AWG_PORT" =~ ^[0-9]+$ ]] && (( AWG_PORT >= 1024 && AWG_PORT <= 65535 )) \
+    || die "Для роли awg нужен --awg-port 1024..65535 (UDP, не 51820 — стандартный порт WG сам по себе признак)"
+  [[ "$AWG_PORT" == "51820" ]] && warn "Порт 51820 — дефолт WireGuard, лучше взять случайный высокий"
+fi
 
 # ── Проверка SSH-ключа до того, как отключим пароли ────────────────────────
 if [[ ! -s /root/.ssh/authorized_keys ]] && [[ -z "${SUDO_USER:-}" || ! -s "/home/${SUDO_USER:-nobody}/.ssh/authorized_keys" ]]; then
@@ -139,7 +147,11 @@ EOF
 
 # ── SSH ────────────────────────────────────────────────────────────────────
 log "Настройка SSH (порт $SSH_PORT, только ключи)"
-cat > /etc/ssh/sshd_config.d/99-hardening.conf <<EOF
+# В sshd_config.d действует ПЕРВОЕ встреченное значение, файлы читаются по
+# алфавиту. cloud-init кладёт 50-cloud-init.conf с PasswordAuthentication yes —
+# поэтому наш файл обязан идти раньше (01-…), иначе пароли останутся включены.
+rm -f /etc/ssh/sshd_config.d/99-hardening.conf
+cat > /etc/ssh/sshd_config.d/01-hardening.conf <<EOF
 Port $SSH_PORT
 PermitRootLogin prohibit-password
 PasswordAuthentication no
@@ -155,7 +167,24 @@ ClientAliveCountMax 2
 LoginGraceTime 30
 EOF
 sshd -t || die "Конфиг sshd невалиден — изменения НЕ применены"
-systemctl restart ssh 2>/dev/null || systemctl restart sshd
+# Ubuntu 22.10+: sshd запускается через ssh.socket, порт берётся генератором
+# из sshd_config только после daemon-reload + рестарта сокета. Простой
+# `restart ssh` порт НЕ меняет — а ufw ниже откроет только новый порт.
+if systemctl is-enabled ssh.socket >/dev/null 2>&1; then
+  systemctl daemon-reload
+  systemctl restart ssh.socket
+  systemctl restart ssh 2>/dev/null || true
+else
+  systemctl restart ssh 2>/dev/null || systemctl restart sshd
+fi
+for _ in 1 2 3 4 5; do
+  ss -Htln "( sport = :$SSH_PORT )" | grep -q . && break
+  sleep 1
+done
+ss -Htln "( sport = :$SSH_PORT )" | grep -q . \
+  || die "sshd НЕ слушает порт $SSH_PORT — ufw не трогаю, чтобы не потерять доступ. Проверьте: ss -tlnp | grep ssh"
+[[ "$(sshd -T 2>/dev/null | awk '/^passwordauthentication /{print $2}')" == "no" ]] \
+  || warn "sshd -T всё ещё показывает passwordauthentication yes — проверьте /etc/ssh/sshd_config.d/"
 warn "SSH теперь на порту $SSH_PORT. НЕ ЗАКРЫВАЙТЕ текущую сессию, пока не проверите вход в новом окне."
 
 # ── Firewall ───────────────────────────────────────────────────────────────
@@ -210,6 +239,14 @@ case "$ROLE" in
         warn "Добавьте вручную: ufw allow from <IP_RU_НОДЫ> to any port $TRANSIT_PORT proto tcp"
       fi
     fi
+    ;;
+  awg)
+    # Отдельный AmneziaWG-контур (ADR-0008): наружу только UDP-порт туннеля.
+    # Web UI wg-easy слушает 127.0.0.1 и доступен только через SSH-туннель.
+    # ВНИМАНИЕ: порты, опубликованные Docker, обходят ufw — поэтому web UI
+    # публикуется именно на 127.0.0.1 (см. 70-awg.sh), а не на 0.0.0.0.
+    ufw allow "$AWG_PORT"/udp comment 'AmneziaWG'
+    log "Роль: AWG. Открыт только UDP $AWG_PORT."
     ;;
   *) die "Неизвестная роль: $ROLE" ;;
 esac
@@ -305,7 +342,7 @@ cat <<EOF
 ════════════════════════════════════════════════════════════════
   SSH порт        : $SSH_PORT  (только по ключу)
   Firewall        : $(ufw status | grep -q '^Status: active' && echo 'ufw активен' || echo 'ufw НЕ включён (правила подготовлены, см. предупреждения выше)')
-  Транзитный порт : $TRANSIT_PORT
+  Транзитный порт : $TRANSIT_PORT$([[ "$ROLE" == "awg" ]] && printf '\n  AWG порт (UDP)  : %s' "$AWG_PORT")
   Congestion ctrl : $(sysctl -n net.ipv4.tcp_congestion_control)
   Docker          : $(docker --version 2>/dev/null || echo 'не установлен')
   Исходящий SMTP  : заблокирован
@@ -317,5 +354,6 @@ cat <<EOF
     панель  → 10-panel-install.sh
     нода    → 20-node-install.sh
     RU-вход → 20-node-install.sh, затем 30-selfsteal.sh
+    AWG     → 70-awg.sh
 ════════════════════════════════════════════════════════════════
 EOF

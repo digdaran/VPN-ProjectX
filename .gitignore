@@ -8,3 +8,6 @@ scripts/deploy.conf
 
 __pycache__/
 *.pyc
+
+# Собранный (envsubst) конфиг роутера — внутри реальная ссылка подписки. Шаблон stargate-tavrida.yaml — коммитим
+stargate.yaml

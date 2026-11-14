@@ -26,6 +26,8 @@
 - [`docs/api-automation.md`](docs/api-automation.md) — API, вебхуки, свой оркестратор
 - [`docs/multi-entry.md`](docs/multi-entry.md) — прямые подключения ко всем нодам, механизм `tcp 16-20`
 - [`docs/client-templates.md`](docs/client-templates.md) — разный формат подписки под разных клиентов (INCY, Clash/Mihomo) через Templates/Response Rules Remnawave
+- [`docs/awg.md`](docs/awg.md) — AmneziaWG-контур (уровень E), роутеры Tavrida на Mihomo
+- [`docs/competitor-cryvps.md`](docs/competitor-cryvps.md) — разбор подписки CryVPN (ноябрь 2026) и план внедрения приёмов
 - [`ARCHITECTURE.md`](ARCHITECTURE.md) — техническая архитектура: узлы, протокольный стек, порты, конвейер развёртывания
 - [`DECISIONS.md`](DECISIONS.md) — журнал решений (ADR): почему именно так, а не иначе, и при каких условиях пересматривать
 - [`CLAUDE.md`](CLAUDE.md) — для тех, кто вносит правки при помощи AI-ассистента: инварианты репозитория и что нельзя ломать молча
@@ -67,6 +69,9 @@ scripts/
   40-keygen.sh                   ключи Reality, shortId, пути XHTTP
   50-preflight.sh                проверка конфигов перед выкаткой
   60-entry-test.sh               проверка входов НА ОБЪЁМЕ (ловит tcp 16-20)
+  70-awg.sh                      AmneziaWG-контур (wg-easy + AWG 3.1), см. docs/awg.md
+  awg-to-mihomo.py               .conf AWG → прокси для Mihomo (version: 3)
+  stargate-adapt.py              upstream Stargate → stargate-tavrida.yaml (шаблон для роутеров)
   90-healthcheck.sh              мониторинг + алерты в Telegram
   deploy.sh                      оркестратор: прогоняет 00→30 по SSH на всех серверах инвентаря
   deploy.conf.example            шаблон инвентаря для deploy.sh
@@ -440,7 +445,7 @@ bash scripts/deploy.sh --inventory scripts/deploy.conf             # затем 
 | **C. Второй SNI / shortId** | Тот же узел, другой `shortId` и путь XHTTP | Смена SNI обнуляет контекст счётчика соединений |
 | **C+. Вторые RU-врата** | Второй российский VPS с белым IP у другого провайдера | **Самое выгодное вложение в отказоустойчивость** — надёжнее любого прямого зарубежного входа |
 | **D. Прямой выход** | VLESS + XHTTP + Reality напрямую на зарубежную ноду, минуя RU | Если ляжет RU-нода. Упирается в `tcp 16-20`: у части пользователей не заработает. См. [`docs/multi-entry.md`](docs/multi-entry.md) |
-| **E. Другой стек** | AmneziaWG на отдельной зарубежной ноде | Если Xray-контур попадёт под блок целиком |
+| **E. Другой стек** | AmneziaWG 3.1 на отдельной зарубежной ноде — [`docs/awg.md`](docs/awg.md) | Если Xray-контур попадёт под блок целиком. Клиенты: Amnezia, Mihomo ≥ 1.19.30 (`version: 3`) |
 
 Remnawave позволяет отдать все профили **в одной подписке** — клиенты вроде Happ и v2rayNG сами переключаются по доступности. Пользователю ничего делать не надо, и вам не надо рассылать новые ключи в панике.
 
