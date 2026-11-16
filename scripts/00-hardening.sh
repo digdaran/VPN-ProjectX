@@ -166,6 +166,10 @@ ClientAliveInterval 300
 ClientAliveCountMax 2
 LoginGraceTime 30
 EOF
+# Ubuntu 24.04 + ssh.socket: /run/sshd создаёт только сам сервис при первом
+# подключении — без него `sshd -t` падает с "Missing privilege separation
+# directory" при вполне валидном конфиге (найдено на RU-Gate 2, ADR-0023).
+mkdir -p /run/sshd && chmod 0755 /run/sshd
 sshd -t || die "Конфиг sshd невалиден — изменения НЕ применены"
 # Ubuntu 22.10+: sshd запускается через ssh.socket, порт берётся генератором
 # из sshd_config только после daemon-reload + рестарта сокета. Простой
@@ -210,19 +214,41 @@ else
   ufw default deny incoming
   ufw default allow outgoing
 fi
-ufw allow "$SSH_PORT"/tcp comment 'SSH'
+
+# В режиме сосуществования на сервере может уже стоять явное правило
+# «Anywhere DENY IN Anywhere» (whitelist-схема чужого сервиса). ufw применяет
+# ПЕРВОЕ совпавшее правило, а `ufw allow` дописывает в конец — наши allow
+# оказались бы после deny и молча не работали бы (найдено на RU-Gate 2,
+# ADR-0023). Поэтому такие правила вставляем перед deny-all.
+# Позицию deny-all считаем ПОСЛЕ удаления старой копии правила: если она
+# стояла выше deny, удаление сдвигает нумерацию на 1 и правило встало бы
+# после deny (так на RU-Gate 2 SSH:22 однажды оказался за deny-all).
+_deny_all_pos() {
+  ufw status numbered 2>/dev/null \
+    | awk '/^\[ *[0-9]+\] +Anywhere +DENY IN +Anywhere *$/{gsub(/[][ ]/,"",$1); print $1; exit}'
+}
+fw_allow() {
+  if [[ $NO_FW_RESET -eq 1 && -n "$(_deny_all_pos)" ]]; then
+    ufw delete allow "$@" >/dev/null 2>&1 || true
+    ufw insert "$(_deny_all_pos)" allow "$@"
+  else
+    ufw allow "$@"
+  fi
+}
+
+fw_allow "$SSH_PORT"/tcp comment 'SSH'
 
 case "$ROLE" in
   panel)
-    ufw allow 80/tcp  comment 'ACME'
-    ufw allow 443/tcp comment 'Panel HTTPS'
+    fw_allow 80/tcp  comment 'ACME'
+    fw_allow 443/tcp comment 'Panel HTTPS'
     ;;
   node)
-    ufw allow from "$PANEL_IP" to any port "$NODE_PORT" proto tcp comment 'Remnawave panel -> node'
-    ufw allow 80/tcp comment 'ACME'
+    fw_allow from "$PANEL_IP" to any port "$NODE_PORT" proto tcp comment 'Remnawave panel -> node'
+    fw_allow 80/tcp comment 'ACME'
     if [[ $RU_ENTRY -eq 1 ]]; then
       # Входная нода: 443 открыт всему интернету — сюда идут клиенты
-      ufw allow 443/tcp comment 'Client entry (Reality)'
+      fw_allow 443/tcp comment 'Client entry (Reality)'
       log "Роль: RU-ВХОД. Порт 443 открыт публично."
     else
       # Выходная нода: транзитный порт только с российской ноды.
@@ -230,7 +256,7 @@ case "$ROLE" in
       # (см. --no-fw-reset) укажите свободный через --transit-port.
       if [[ -n "$EXIT_IPS" ]]; then
         for ip in $EXIT_IPS; do
-          ufw allow from "$ip" to any port "$TRANSIT_PORT" proto tcp comment 'Transit from RU gate'
+          fw_allow from "$ip" to any port "$TRANSIT_PORT" proto tcp comment 'Transit from RU gate'
         done
         log "Роль: ВЫХОД. Порт $TRANSIT_PORT открыт только для: $EXIT_IPS"
         [[ "$TRANSIT_PORT" != "443" ]] && warn "Транзитный порт нестандартный ($TRANSIT_PORT) — убедитесь, что xray-transit-outbound.json на RU-ноде и config-profile этой ноды в панели используют тот же порт (см. ARCHITECTURE.md)."
@@ -245,7 +271,7 @@ case "$ROLE" in
     # Web UI wg-easy слушает 127.0.0.1 и доступен только через SSH-туннель.
     # ВНИМАНИЕ: порты, опубликованные Docker, обходят ufw — поэтому web UI
     # публикуется именно на 127.0.0.1 (см. 70-awg.sh), а не на 0.0.0.0.
-    ufw allow "$AWG_PORT"/udp comment 'AmneziaWG'
+    fw_allow "$AWG_PORT"/udp comment 'AmneziaWG'
     log "Роль: AWG. Открыт только UDP $AWG_PORT."
     ;;
   *) die "Неизвестная роль: $ROLE" ;;

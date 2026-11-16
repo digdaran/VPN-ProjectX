@@ -264,8 +264,8 @@ Remnawave подставляет пользователю в подписку in
 | Squad | Инбаунды | Кому |
 |---|---|---|
 | `Tavrida` | все 12 `client-in-*`/`raw-in-*` (все 6 нод: FR/KZ/FI/NL/DE/MD), **без** RU-Gate | Узкий круг №1 |
-| `VIP Users` | те же 12 + `vless-xhttp-reality-in` (RU-Gate, порт 443 на ru-entry) | Узкий круг №2 (плюс вход через РФ) |
-| `Standard Access` | `client-in-*`/`raw-in-*` только безлимитных нод (KZ/FI/NL/MD) — без RU-Gate, без FR/DE | Все остальные обычные пользователи |
+| `VIP Users` | те же 12 + `vless-xhttp-reality-in` (RU-Gate, порт 443 на ru-entry) + `ru2-xhttp-reality-in` (RU-Gate 2, ADR-0023) | Узкий круг №2 (плюс вход через РФ) |
+| `Standard Access` | `client-in-*` (фактически на 2026-11-16: NL/MD/DE/FR/FI/AT, без KZ — расхождение с ADR-0017) + `ru2-xhttp-reality-in` (RU-Gate 2, ADR-0023) — без RU-Gate | Все остальные обычные пользователи |
 | `Transit-FR`/`Transit-KZ`/`Transit-FI`/`Transit-NL`/`Transit-DE`/`Transit-MD`/`Transit-AT` | По одному `transit-in-*` на squad | Служебные пользователи (`svc-transit-*`) — see §7, не для людей |
 
 `Tavrida` и `VIP Users` оба видят вообще все ноды — единственная разница
