@@ -14,6 +14,7 @@
 #     работает userspace amneziawg-go из образа — нужен /dev/net/tun;
 #   - web UI публикуется ТОЛЬКО на 127.0.0.1 (Docker обходит ufw!), доступ —
 #     через SSH-туннель: ssh -p <ssh> -L 51821:127.0.0.1:51821 root@<сервер>;
+#     либо временно с одного IP — awg-admin (scripts/awg-admin.sh, ставится здесь);
 #   - пароль админа генерируется и кладётся в /root/awg-admin-password (600),
 #     после первого старта INIT_PASSWORD из .env удаляется.
 #
@@ -208,6 +209,12 @@ docker exec wg-easy sh -c "awg showconf \$(awg show interfaces | head -1)" | gre
 
 install_p2p_block
 
+# ── awg-admin: временный доступ к UI с одного IP без SSH-туннеля ──────────
+log "Ставлю awg-admin (временный доступ к UI с IP текущей SSH-сессии)"
+command -v socat >/dev/null || { apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq socat >/dev/null; }
+install -m 755 "$(dirname "$(readlink -f "$0")")/awg-admin.sh" /usr/local/sbin/awg-admin
+ok "awg-admin установлен: awg-admin [--ip IP] [--ttl 60m] | --status | --close"
+
 log "Убираю INIT_PASSWORD из .env (пароль — в $PASS_FILE)"
 sed -i '/^INIT_PASSWORD=/d' "$DIR/.env"
 
@@ -220,6 +227,7 @@ cat <<EOF
   Web UI          : только через SSH-туннель:
                     ssh -p <ssh-порт> -L $UI_PORT:127.0.0.1:$UI_PORT root@<сервер>
                     → http://127.0.0.1:$UI_PORT  (admin / пароль в $PASS_FILE)
+                    или без туннеля, с IP текущей SSH-сессии: awg-admin (docs/awg.md)
   Режим           : $(lsmod | grep -q '^amneziawg' && echo 'kernel amneziawg' || echo 'userspace amneziawg-go')
 
   Дальше:

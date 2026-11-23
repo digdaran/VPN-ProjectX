@@ -71,6 +71,7 @@ scripts/
   60-entry-test.sh               проверка входов НА ОБЪЁМЕ (ловит tcp 16-20)
   70-awg.sh                      AmneziaWG-контур (wg-easy + AWG 3.1), см. docs/awg.md
   awg-to-mihomo.py               .conf AWG → прокси для Mihomo (version: 3)
+  awg-admin.sh                   временный доступ к UI wg-easy с IP текущей SSH-сессии (ставит 70-awg.sh)
   stargate-adapt.py              upstream Stargate → stargate-tavrida.yaml (шаблон для роутеров)
   90-healthcheck.sh              мониторинг + алерты в Telegram
   deploy.sh                      оркестратор: прогоняет 00→30 по SSH на всех серверах инвентаря
